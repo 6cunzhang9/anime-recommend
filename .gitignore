@@ -1,0 +1,20 @@
+# Collected anonymous research samples stay local by default.
+data/*.jsonl
+data/*.csv
+data/*.json
+
+# Runtime noise
+node_modules/
+.npm-cache/
+.DS_Store
+Thumbs.db
+*.log
+.env
+.env.local
+!.env.example
+
+# Local catalog rebuild cache / browser test artifacts
+scripts/catalog-cache.json
+.edge-test*/
+dist/
+.netlify/

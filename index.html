@@ -1,0 +1,492 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#111019">
+  <meta name="description" content="用 Big Five 五维心理、内容偏好和观看习惯，配合 148 部经口碑筛选的番剧，找到更值得你尝试的番。">
+  <title>本命番鉴定所 · Anime Soul Lab</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%23f26451'/%3E%3Ctext x='32' y='44' text-anchor='middle' font-size='36' fill='%23111019' font-family='serif'%3E本%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="page-atmosphere" aria-hidden="true">
+    <span class="glow glow-a"></span>
+    <span class="glow glow-b"></span>
+    <span class="grain"></span>
+    <span class="star star-a">✦</span>
+    <span class="star star-b">·</span>
+    <span class="star star-c">✦</span>
+    <span class="star star-d">·</span>
+  </div>
+
+  <header class="site-header">
+    <button class="brand" type="button" data-go-home aria-label="回到首页">
+      <span class="brand-seal">本</span>
+      <span class="brand-type">
+        <strong>本命番鉴定所</strong>
+        <small>ANIME SOUL LAB</small>
+      </span>
+    </button>
+    <div class="header-actions">
+      <span class="header-meta">37 QUESTIONS · 6 MIN</span>
+      <button class="quiet-button js-open-lab" type="button">
+        <span class="status-dot" aria-hidden="true"></span>
+        数据实验室
+      </button>
+    </div>
+  </header>
+
+  <main class="site-main">
+    <!-- 开始页 -->
+    <section class="screen intro-screen is-active" id="screen-intro">
+      <div class="intro-grid">
+        <div class="intro-copy">
+          <p class="eyebrow reveal-1"><span class="eyebrow-line"></span>BIG FIVE × TASTE × RECEPTION</p>
+          <h1 class="reveal-2">不只测性格，<br>还测你<span class="accent-serif">想看什么番</span></h1>
+          <p class="intro-lead reveal-3">五个 Big Five 心理维度，加上你亲口说出的内容偏好和观看习惯；再把它们与双平台口碑、制作信息和候选番池一起计算。不把你塞进四个字母，也不让性格替你决定口味。</p>
+          <div class="intro-cta reveal-4">
+            <button class="primary-button" id="start-btn" type="button">
+              <span>开始 <b data-question-count>37</b> 题测试</span>
+              <span class="button-arrow" aria-hidden="true">→</span>
+            </button>
+            <button class="text-button" type="button" data-scroll-method>
+              它是怎么算的？
+              <span aria-hidden="true">↘</span>
+            </button>
+          </div>
+          <div class="trust-row reveal-5">
+            <span><i aria-hidden="true">✧</i> <b data-question-count>37</b> 道题 · 约 6 分钟</span>
+            <span><i aria-hidden="true">◇</i> 5 心理维度 + 15 项口味信号</span>
+            <span><i aria-hidden="true">▱</i> <b data-anime-count>130</b> 部精选番</span>
+          </div>
+        </div>
+
+        <div class="hero-art" aria-hidden="true">
+          <div class="hero-halo halo-a"></div>
+          <div class="hero-halo halo-b"></div>
+          <div class="hero-backcard"></div>
+          <div class="poster-card">
+            <div class="poster-topline">
+              <span>ANIME SOUL FILE</span>
+              <span>NO. 037</span>
+            </div>
+            <div class="poster-orbit">
+              <span class="orbit-ring orbit-ring-a"></span>
+              <span class="orbit-ring orbit-ring-b"></span>
+              <span class="orbit-line orbit-line-a"></span>
+              <span class="orbit-line orbit-line-b"></span>
+              <span class="poster-question">?</span>
+              <span class="orbit-chip chip-a">🪄 世界观</span>
+              <span class="orbit-chip chip-b">🎭 情绪</span>
+              <span class="orbit-chip chip-c">★ 口碑</span>
+              <span class="orbit-start start-a">✦</span>
+              <span class="orbit-start start-b">·</span>
+            </div>
+            <div class="poster-bottom">
+              <p>你的观看画像</p>
+              <span>等待 37 个选择解锁</span>
+            </div>
+          </div>
+          <div class="hero-note note-a"><span>01</span> 五维画像</div>
+          <div class="hero-note note-b"><span>02</span> 口碑番池</div>
+          <div class="hero-seal">37<small>QUESTIONS</small></div>
+        </div>
+      </div>
+
+      <section class="method-section" id="method">
+        <div class="method-heading">
+          <p class="eyebrow"><span class="eyebrow-line"></span>HOW IT WORKS</p>
+          <p>喜欢不是一道性格题的答案，而是一组证据。</p>
+        </div>
+        <div class="method-grid">
+          <article class="method-card">
+            <span class="method-index">01</span>
+            <div class="method-icon">◒</div>
+            <h2>先理解人，再理解口味</h2>
+            <p>20 道 Big Five 风格题、9 项内容偏好和 6 项观看习惯。心理维度只是背景，显式偏好才是主信号。</p>
+          </article>
+          <article class="method-card">
+            <span class="method-index">02</span>
+            <div class="method-icon">⌁</div>
+            <h2>让口碑先过门槛</h2>
+            <p>从 AniList 与 MyAnimeList 聚合评分、评分人数和收藏信号。低口碑或样本不足的作品不进入推荐。</p>
+          </article>
+          <article class="method-card">
+            <span class="method-index">03</span>
+            <div class="method-icon">✧</div>
+            <h2>混合排序，不玩黑箱</h2>
+            <p>口味匹配占 50%，口碑质量 18%，Big Five 14%，观看动机 10%，制作信号 8%。权重直接写在结果页。</p>
+          </article>
+          <article class="method-card">
+            <span class="method-index">04</span>
+            <div class="method-icon">♡</div>
+            <h2>把真实本命留下来</h2>
+            <p>推荐之后再收集你的最爱与理由。命中或失手都可以回填，用于之后做回测和权重校准。</p>
+          </article>
+        </div>
+        <p class="method-source">
+          <span>方法与来源</span>
+          人格条目参考公开领域
+          <a href="https://ipip.ori.org/" target="_blank" rel="noopener noreferrer">IPIP / Big Five</a>
+          的测量思路，中文为项目改写，不是临床量表。口碑与标签来自
+          <a href="https://anilist.co/" target="_blank" rel="noopener noreferrer">AniList</a>
+          与
+          <a href="https://myanimelist.net/" target="_blank" rel="noopener noreferrer">MyAnimeList</a>
+          的聚合快照；不抓取单条论坛言论。
+        </p>
+      </section>
+
+      <div class="intro-quote">
+        <span class="quote-mark">“</span>
+        <p>算法可以算出相似，<br>却算不出你按下收藏的<br class="mobile-break">那一刻。</p>
+        <span class="quote-by">— 本命番鉴定所</span>
+      </div>
+    </section>
+
+    <!-- 答题页 -->
+    <section class="screen test-screen" id="screen-test" aria-labelledby="question-text">
+      <div class="test-shell">
+        <div class="test-topline">
+          <button class="test-exit" id="test-exit-btn" type="button">
+            <span aria-hidden="true">←</span> 退出测试
+          </button>
+          <span class="test-mode"><i aria-hidden="true"></i>PROFILE + TASTE SCAN</span>
+          <span class="test-count" id="question-counter">01 <em>/ 37</em></span>
+        </div>
+        <div class="progress-track" role="progressbar" aria-valuemin="1" aria-valuemax="37" aria-valuenow="1" aria-label="答题进度">
+          <span class="progress-fill" id="progress-fill"></span>
+        </div>
+
+        <div class="question-panel">
+          <div class="question-meta">
+            <span class="accent-dot" aria-hidden="true"></span>
+            <span id="question-kind">关于你 · 1 / 20</span>
+            <span class="question-meta-line" aria-hidden="true"></span>
+            <span class="question-number" id="question-number">QUESTION 01</span>
+          </div>
+          <h2 class="question-text" id="question-text" tabindex="-1"></h2>
+          <p class="scale-instruction" id="scale-instruction">这句话有多符合你？按平时的你作答。</p>
+          <div class="scale-grid" id="options" role="group" aria-labelledby="question-text"></div>
+          <div class="test-bottomline">
+            <button class="prev-button" id="prev-btn" type="button">
+              <span aria-hidden="true">←</span> 上一题
+            </button>
+            <span class="keyboard-hint">按 <kbd>1</kbd> – <kbd>5</kbd> 选择</span>
+            <span class="test-progress-note">作答后自动进入下一题</span>
+          </div>
+        </div>
+
+        <div class="test-footnote">
+          <span>没有对错。人格分数不等于能力，也不等于命运。</span>
+          <span>内置注意力校验与异常作答标记，用于提高匿名样本可信度。</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- 计算中 -->
+    <section class="screen loading-screen" id="screen-loading" aria-live="polite" aria-busy="true">
+      <div class="loading-orbit" aria-hidden="true">
+        <span class="loader-ring loader-ring-a"></span>
+        <span class="loader-ring loader-ring-b"></span>
+        <span class="loader-core">✧</span>
+        <span class="loader-dot dot-one"></span>
+        <span class="loader-dot dot-two"></span>
+        <span class="loader-dot dot-three"></span>
+      </div>
+      <p class="eyebrow">CALCULATING RESONANCE</p>
+      <h2 id="loading-title">正在读取你的全部回答</h2>
+      <p class="loading-sub">五维心理坐标、显式口味和观看动机正在合成你的推荐向量。</p>
+      <div class="loading-meter"><span></span></div>
+      <p class="loading-note">接着还要过一道双平台口碑门槛。低口碑或样本不足的作品不会出现在推荐里。</p>
+    </section>
+
+    <!-- 结果页 -->
+    <section class="screen result-screen" id="screen-result">
+      <div class="result-wrap">
+        <div class="result-topline">
+          <div>
+            <p class="eyebrow"><span class="eyebrow-line"></span>PROFILE COMPLETE · 37 / 37</p>
+            <h2 class="result-heading">你的观看画像</h2>
+          </div>
+          <button class="outline-button js-retake" type="button">重新测试 <span aria-hidden="true">↻</span></button>
+        </div>
+
+        <article class="profile-card" id="profile-card">
+          <div class="profile-visual">
+            <p class="eyebrow">BIG FIVE / SELF-REPORT</p>
+            <div class="radar-chart" id="bigfive-radar" aria-label="Big Five 五维雷达图"></div>
+            <span class="radar-caption">本次作答分数 · 非人群百分位</span>
+          </div>
+          <div class="profile-copy">
+            <div class="profile-titleline">
+              <p class="profile-kicker">你的观看者原型</p>
+              <h2><span class="type-emoji" id="type-emoji">🌙</span><span id="type-name">你的观看画像</span></h2>
+            </div>
+            <p class="profile-description" id="type-description"></p>
+            <div class="trait-chips" id="trait-chips"></div>
+            <p class="profile-footnote">这是基于本次自评的描述，不是心理诊断，也不是固定人格类型。</p>
+          </div>
+          <span class="profile-decoration" aria-hidden="true">✧</span>
+        </article>
+
+        <section class="recommendation-section" aria-labelledby="recommendation-heading">
+          <div class="rec-heading">
+            <div>
+              <p class="eyebrow"><span class="eyebrow-line"></span>HYBRID MATCHES / 01—03</p>
+              <h2 id="recommendation-heading">先看看这三部</h2>
+            </div>
+            <p class="rec-note">直接口味 50% · 口碑质量 18%<br>Big Five 14% · 观看动机 10% · 制作信号 8%</p>
+          </div>
+          <div class="recommendation-list recommendation-list-summary" id="recommendations"></div>
+          <div class="rec-handoff">
+            <p>三部都先过了双平台口碑门槛。<span>但也可能全都猜错——你真正的答案，比这套算法更重要。</span></p>
+            <button class="outline-button" type="button" data-scroll-favorite>填写我的本命 <span aria-hidden="true">↓</span></button>
+          </div>
+        </section>
+
+        <section class="favorite-panel" id="favorite-panel" aria-labelledby="favorite-heading">
+          <div class="favorite-intro">
+            <p class="eyebrow">YOUR TURN / THE REAL ANSWER</p>
+            <h2 id="favorite-heading">你的一句话，<br>可能让下一个同好<br>少走一点弯路。</h2>
+            <p class="favorite-lead">写下你真正最爱的那部番，以及它为什么值得被记住。你的答案会和推荐结果放在一起，成为之后改进推荐的匿名样本；也许下一次，口味相似的人就会因此看到更接近本命的番。</p>
+            <p class="favorite-invite">不用写得漂亮，一句真心话就够了。</p>
+            <ul class="favorite-points">
+              <li><span>01</span>匿名保存，不收集姓名或账号</li>
+              <li><span>02</span>你的理由会成为相似口味的匿名线索</li>
+              <li><span>03</span>提交后仍留在本页，可继续看推荐分析</li>
+            </ul>
+            <div class="favorite-sticker" aria-hidden="true">
+              <span>YOUR</span>
+              <strong>HONMEI</strong>
+              <span>本命 / 2026</span>
+            </div>
+          </div>
+
+          <div class="favorite-form-wrap">
+            <form class="favorite-form" id="favorite-form" novalidate>
+              <div class="form-heading">
+                <span class="form-number">01</span>
+                <div>
+                  <h3>轮到你写下真正的答案</h3>
+                  <p>只需要一部作品，和一个愿意分享的理由。</p>
+                </div>
+              </div>
+
+              <div class="field-group">
+                <label for="favorite-title">你实际最喜欢的番 <span class="required">必填</span></label>
+                <input id="favorite-title" name="favoriteTitle" type="text" maxlength="80" autocomplete="off" placeholder="例如：夏目友人帐" aria-describedby="favorite-title-hint">
+                <p class="field-hint" id="favorite-title-hint">官方译名、日文名或常用简称都可以；候选中没有也会被记录。</p>
+              </div>
+
+              <div class="field-group">
+                <div class="label-line">
+                  <label for="favorite-reason">为什么喜欢它 / 你会怎么安利它？ <span class="optional">选填</span></label>
+                  <span class="character-count"><b id="reason-count">0</b> / 500</span>
+                </div>
+                <textarea id="favorite-reason" name="favoriteReason" rows="5" maxlength="500" placeholder="是哪个角色、哪一幕，或它陪你度过的哪段时间？"></textarea>
+                <p class="field-hint">你的原话会匿名保存，成为之后改进推荐和观察“为什么命中/失手”的线索。</p>
+              </div>
+
+              <label class="consent-row" for="consent-checkbox">
+                <input id="consent-checkbox" name="consent" type="checkbox" checked>
+                <span class="custom-check" aria-hidden="true">✓</span>
+                <span class="consent-copy">允许匿名保存本次测试结果与理由，用于之后为相似口味的人改进推荐<small>不收集姓名、账号或设备标识；原始理由不会公开展示。</small></span>
+              </label>
+
+              <button class="submit-button" id="submit-favorite" type="submit">
+                <span>提交我的本命，继续浏览</span>
+                <span aria-hidden="true">→</span>
+              </button>
+              <p class="form-error" id="form-error" role="alert" hidden></p>
+              <p class="form-privacy">勾选后，提交会保存在本机；连接收集服务时会额外写入匿名样本池。取消勾选则本次不保存，你仍可查看结果。</p>
+            </form>
+
+            <div class="favorite-thanks" id="favorite-thanks" hidden aria-live="polite">
+              <div class="thanks-top">
+                <span class="thanks-mark" aria-hidden="true">✧</span>
+                <p class="eyebrow">ARCHIVED WITH CARE</p>
+              </div>
+              <h3>你的本命已经收好。</h3>
+              <div class="thanks-title-row">
+                <span>你的本命</span>
+                <h4 id="thanks-title"></h4>
+              </div>
+              <blockquote class="thanks-reason" id="thanks-reason" hidden></blockquote>
+              <p class="thanks-compare" id="thanks-compare"></p>
+              <div class="save-status" id="save-status">
+                <span class="status-dot" aria-hidden="true"></span>
+                <span id="save-status-text">正在保存…</span>
+              </div>
+              <div class="thanks-actions">
+                <button class="outline-button" type="button" data-scroll-reasons>继续看推荐理由 <span aria-hidden="true">↓</span></button>
+                <button class="text-button js-open-lab" type="button">看看研究数据 <span aria-hidden="true">↗</span></button>
+                <button class="text-button js-retake" type="button">再测一次</button>
+              </div>
+              <p class="thanks-note">不用离开这页——下面还有算法为什么推荐那三部的详细解释。</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="reasons-section" aria-labelledby="reasons-heading">
+          <div class="rec-heading">
+            <div>
+              <p class="eyebrow"><span class="eyebrow-line"></span>WHY THESE THREE / DETAILED</p>
+              <h2 id="reasons-heading">为什么推荐这三部</h2>
+            </div>
+            <p class="rec-note">先过口碑门槛，再谈合不合拍。<br>每部都附可核验的来源与可能的劝退点。</p>
+          </div>
+          <div class="recommendation-reasons" id="recommendation-reasons"></div>
+          <div class="evidence-note">
+            <div>
+              <p class="eyebrow">EVIDENCE / QUALITY GATE</p>
+              <h3>先过口碑门槛，再谈合不合拍</h3>
+            </div>
+            <p>候选池要求双平台加权口碑 ≥ 7.5/10、MAL 评分人数 ≥ 1.2 万、AniList 均分 ≥ 70；推荐只从通过门槛的作品中产生。单条论坛评论不会被当作推荐特征，避免把串子发言或短期情绪当成共识。制作公司信息用于解释制作背景，不替代作品评分；Big Five 到内容的映射是启发式辅助，不是因果模型。</p>
+          </div>
+          <p class="algorithm-disclaimer">
+            <span aria-hidden="true">✧</span>
+            匹配分数是排序指数，不是客观质量分。口碑数据是 2026-11-14 的快照；番剧会随时间获得新评价，真正的最爱永远以你的体验为准。
+          </p>
+        </section>
+
+        <section class="axis-panel" aria-labelledby="axis-heading">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">YOUR BIG FIVE</p>
+              <h3 id="axis-heading">五个心理维度</h3>
+            </div>
+            <p class="section-aside">分数来自本次作答的相对计算，不是人群百分位。高低都没有优劣。</p>
+          </div>
+          <div class="trait-bars" id="bigfive-list"></div>
+        </section>
+
+        <section class="taste-panel" aria-labelledby="taste-heading">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">STATED TASTE / THE MAIN SIGNAL</p>
+              <h3 id="taste-heading">不只靠性格：你直接说出的口味</h3>
+            </div>
+            <p class="section-aside">这些是显式偏好，占推荐排序的约一半。性格不会替你决定喜欢什么。</p>
+          </div>
+          <div class="taste-grid" id="taste-grid"></div>
+          <div class="habit-summary" id="habit-summary"></div>
+          <p class="taste-footnote">“想看程度”是直接偏好题，不等同于人格特质；它们和 Big Five 分开计分、分开解释。</p>
+        </section>
+
+        <div class="result-bottom-actions">
+          <button class="text-button js-retake" type="button"><span aria-hidden="true">↻</span> 再测一次</button>
+          <button class="text-button js-open-lab" type="button">数据实验室 <span aria-hidden="true">↗</span></button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="footer-brand">
+      <span class="brand-seal small">本</span>
+      <span>本命番鉴定所</span>
+    </div>
+    <p>娱乐向观看偏好测试，不构成心理诊断。口碑为 AniList + MyAnimeList 聚合快照；作品版权归原作者及权利方所有。</p>
+    <div class="footer-links">
+      <button type="button" data-scroll-method>方法说明</button>
+      <button type="button" class="js-open-lab">研究数据</button>
+    </div>
+  </footer>
+
+  <!-- 数据实验室弹窗 -->
+  <div class="modal" id="data-modal" hidden>
+    <div class="modal-scrim" data-close-modal></div>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="data-modal-title" aria-describedby="data-modal-lead">
+      <div class="modal-head">
+        <div>
+          <p class="eyebrow">DATA LAB / ANONYMOUS</p>
+          <h2 id="data-modal-title">推荐算法的数据燃料</h2>
+        </div>
+        <button class="modal-close" type="button" data-close-modal aria-label="关闭数据实验室">×</button>
+      </div>
+      <p class="modal-lead" id="data-modal-lead">每一份样本都保留五维得分、37 道题原始作答、内容偏好、观看习惯、推荐结果和真实本命。你可以导出它们，用来回测命中率、重算权重，或比较“推荐理由”和用户真实理由之间的差距。</p>
+
+      <div class="stats-grid">
+        <div class="stat-card">
+          <span class="stat-value" id="stat-total">0</span>
+          <span class="stat-label">份有效样本</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-value" id="stat-reason">0</span>
+          <span class="stat-label">条喜欢理由</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-value" id="stat-hit">—</span>
+          <span class="stat-label">Top 3 命中率</span>
+        </div>
+      </div>
+
+      <div class="source-status" id="data-source">
+        <span class="status-dot" aria-hidden="true"></span>
+        <span>正在检测数据来源…</span>
+      </div>
+      <p class="quality-summary" id="data-quality-summary">有效样本通过注意力检查、非直线作答与最低完成时长校验；被标记的样本会保留但不参与有效统计。</p>
+
+      <div class="admin-export" id="admin-export" hidden>
+        <div>
+          <strong>管理员导出</strong>
+          <p>原始样本包含用户填写的喜欢理由，只有持有 ADMIN_TOKEN 的管理员可以导出。</p>
+        </div>
+        <label for="admin-token">研究数据密钥</label>
+        <input id="admin-token" type="password" autocomplete="off" placeholder="输入 ADMIN_TOKEN">
+      </div>
+
+      <div class="data-actions">
+        <button class="outline-button" id="export-json" type="button">导出 JSON</button>
+        <button class="outline-button" id="export-csv" type="button">导出 CSV</button>
+      </div>
+
+      <details class="catalog-details">
+        <summary>候选番池 · <span data-catalog-count>148</span> 部通过口碑门槛</summary>
+        <p class="catalog-note">这是构建时快照，不是实时榜单。分数为 MAL 与 AniList 的加权口碑；排序仅展示数据库内容，不代表本次推荐结果。</p>
+        <div class="catalog-list" id="catalog-list"></div>
+      </details>
+
+      <details class="schema-details">
+        <summary>一份样本里到底记录了什么？</summary>
+        <p>样本使用独立 ID，不写入 IP、账号或设备标识。原始作答、反向计分信息、注意力检查结果和时间戳都会保留，方便用旧数据重新计算；q-09 与 q-31 是注意力校验题。</p>
+        <pre>{
+  "schemaVersion": 2,
+  "testVersion": "2.0.0",
+  "algorithmVersion": "hybrid-fit-v2",
+  "answers": [{ "id": "q-01", "itemKey": "O1", "value": 4, "reverse": false }],
+  "scores": {
+    "bigFive": { "O": 78, "C": 61, "E": 43, "A": 72, "N": 66 },
+    "preferences": { "fantasy": 5, "mystery": 4 }
+  },
+  "quality": {
+    "valid": true,
+    "attentionPassed": true,
+    "straightLining": false,
+    "durationSeconds": 324
+  },
+  "recommendations": [{ "animeId": "frieren", "matchPercent": 92 }],
+  "actualFavorite": {
+    "title": "夏目友人帐",
+    "reason": "它让我知道温柔也可以是一种力量。",
+    "matchStatus": "top3"
+  },
+  "consent": true
+}</pre>
+      </details>
+
+      <div class="modal-note">
+        <strong>关于隐私与研究口径</strong>
+        <p>未连接收集服务时，数据仅保存在当前浏览器；通过 <code>npm start</code> 启动本地服务时，样本写入 <code>data/responses.jsonl</code>。部署到 Netlify 时，样本由 Functions 写入 Netlify Blobs，导出接口要求 <code>ADMIN_TOKEN</code>。部署前请设置强随机密钥，并补充你的隐私说明与数据保留期限。口碑数据是构建时快照，不包含个人评论原文。</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+  <script src="test-data.js" defer></script>
+  <script src="catalog.js" defer></script>
+  <script src="app.js" defer></script>
+</body>
+</html>

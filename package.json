@@ -1,0 +1,18 @@
+{
+  "name": "anime-soul-lab",
+  "version": "2.0.0",
+  "private": true,
+  "description": "用 Big Five、显式内容偏好与双平台口碑数据，从 148 部精选番中给出可解释推荐，并收集真实本命样本。",
+  "scripts": {
+    "start": "node server.js",
+    "check": "node --check app.js && node --check server.js && node --check test-data.js && node --check catalog.js && node --check netlify/functions/health.mjs && node --check netlify/functions/responses.mjs && node --check netlify/functions/stats.mjs && node --check netlify/functions/export.mjs && node --check netlify/shared/store.mjs && node --check netlify/shared/validation.mjs",
+    "build:catalog": "node scripts/build-catalog.mjs",
+    "build:netlify": "node scripts/build-netlify.mjs"
+  },
+  "dependencies": {
+    "@netlify/blobs": "^11.1.9"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
