@@ -4,6 +4,7 @@ import { createContext, runInContext } from "node:vm";
 import catalog from "../catalog.js";
 import questionData from "../test-data.js";
 import series from "../series-data.js";
+import watch from "../watch-model.js";
 import taste from "../taste-analysis.js";
 
 const { ANIME_CATALOG } = catalog;
@@ -16,7 +17,7 @@ for (const values of dimensions) {
   assert.ok(Object.values(values).every((value) => Number.isInteger(value) && value >= 0 && value <= 100));
 }
 
-const sandbox = createContext({ ...catalog, ...questionData, ANIME_TASTE: taste, ANIME_SERIES: series,
+const sandbox = createContext({ ...catalog, ...questionData, ANIME_TASTE: taste, ANIME_SERIES: series, WATCH_MODEL: watch,
   document: { querySelector: () => null } });
 const source = await readFile(new URL("../app.js", import.meta.url), "utf8");
 runInContext(source.replace("  init();", "  globalThis.engine = { state, deriveProfile, buildRecommendations };"), sandbox);

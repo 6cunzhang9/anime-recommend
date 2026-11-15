@@ -8,6 +8,8 @@ const PUBLIC_FILES = [
   "index.html",
   "styles.css",
   "app.js",
+  "watch-model.js",
+  "experience.js",
   "taste-analysis.js",
   "series-data.js",
   "test-data.js",

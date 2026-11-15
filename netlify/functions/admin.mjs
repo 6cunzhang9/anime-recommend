@@ -90,7 +90,7 @@ export default async function handler(req) {
     const query = v4.normalizeWorkTitle(params.get("q")?.slice(0, 120));
     if (params.get("view") === "users") {
       const members = (await listMembers()).filter((member) =>
-        [member.username, member.nickname, member.id].some((value) => v4.normalizeWorkTitle(value).includes(query)));
+        [member.username, member.nickname, member.code, member.id].some((value) => v4.normalizeWorkTitle(value).includes(query)));
       const after = params.get("after") || "";
       const users = members.filter((member) => member.username > after).slice(0, 21);
       return jsonResponse({ ok: true, users: users.slice(0, 20), next: users.length > 20 ? users[19].username : null });

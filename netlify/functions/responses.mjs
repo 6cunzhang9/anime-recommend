@@ -1,4 +1,5 @@
 import { checkCanPublish } from "../shared/members.mjs";
+import { withdrawFavorite } from "../shared/posts.mjs";
 import { checkAccountContext, getUser, keyPart, readJson, RequestError } from "../shared/auth.mjs";
 import { deleteResponse, errorResponse, getResponsesStore, jsonResponse, responseKey } from "../shared/store.mjs";
 import taste from "../../taste-analysis.js";
@@ -39,10 +40,7 @@ export default async function handler(req) {
       if (typeof payload.response_id !== "string" || !keyPart.test(payload.response_id)) {
         return errorResponse(400, "测评编号无效");
       }
-      const result = await changeEntry(getResponsesStore(), responseKey(payload.response_id, user.id), (record) => {
-        if (!record?.publication || record.publication.deleted_at) return null;
-        return packQuestionnaire({ ...record, publication: { ...record.publication, deleted_at: new Date().toISOString() } });
-      });
+      const result = await withdrawFavorite(getResponsesStore(), user.id, payload.response_id);
       if (result.conflict) return errorResponse(409, "发言已变更，请重试");
       if (!result.record) return errorResponse(404, "发言不存在");
       return jsonResponse({ ok: true, publication: result.record.publication });

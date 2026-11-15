@@ -18,21 +18,16 @@
         <small>ANIME SOUL LAB</small>
       </span>
     </button>
-    <div class="header-actions">
-      <button class="outline-button tree-entry js-open-tree" type="button">树洞</button>
-      <button class="quiet-button" id="account-open" type="button">登录</button>
-    </div>
   </header>
 
   <main class="site-main">
     <!-- 开始页 -->
     <section class="screen intro-screen is-active" id="screen-intro">
-      <div class="start-wrap">
+      <div class="start-wrap" id="guest-start">
         <h1>找到你的下一部本命番</h1>
         <p class="start-lead">聊聊你为什么喜欢一部作品。</p>
         <div class="start-actions">
           <button class="start-button" id="start-btn" type="button">开始测试</button>
-          <button class="outline-button js-open-tree" type="button">逛树洞</button>
         </div>
         <p class="start-meta">40 道题 · 约 8–12 分钟</p>
         <div class="resume-card" id="resume-card" hidden>
@@ -94,7 +89,7 @@
         </div>
 
         <form class="favorite-form" id="favorites-form" novalidate>
-          <div id="favorite-entries" class="favorite-entries"></div>
+          <div id="taste-preferences"></div>          <div id="favorite-entries" class="favorite-entries"></div>
           <button class="outline-button add-favorite-button" id="add-favorite" type="button">＋ 再添加一部（最多 5 部）</button>
 
           <div class="publish-note">
@@ -121,7 +116,7 @@
           <div>
             <h2 class="result-heading">给你的推荐</h2>
           </div>
-          <button class="outline-button js-retake" type="button">重新测试 <span aria-hidden="true">↻</span></button>
+          <button class="outline-button" id="result-home" type="button" hidden>个人中心</button>
         </div>
         <p class="result-save-state" id="result-save-state" hidden></p>
 
@@ -157,19 +152,20 @@
     <!-- 树洞 -->
     <section class="screen tree-screen" id="screen-tree">
       <div class="tree-wrap">
-        <div class="tree-topline">
-          <button class="test-exit" id="tree-back-btn" type="button"><span aria-hidden="true">←</span> 返回</button>
-          <div>
-            <h1 id="area-title">树洞</h1>
-          </div>
-        </div>
-        <nav class="tree-tabs" id="community-tabs" aria-label="树洞分区">
-          <button type="button" data-tree-tab="reviews" class="is-active">社区发言</button>
-          <button type="button" data-tree-tab="library">写评价</button>
+        <nav class="hub-pieces" aria-label="站点专区" hidden>
+          <button class="hub-piece" type="button" data-area="reviews"><span class="piece-icon" aria-hidden="true">◉</span><span>树洞</span></button>
+          <button class="hub-piece" type="button" data-area="discover"><span class="piece-icon" aria-hidden="true">✦</span><span>想追番了</span></button>
+          <button class="hub-piece" type="button" data-area="wanted"><span class="piece-icon" aria-hidden="true">▤</span><span>追番列表</span></button>
+          <button class="hub-piece" type="button" data-area="profile"><span class="piece-icon" aria-hidden="true">◒</span><span>个人中心</span></button>
+        </nav>
+        <button class="test-exit" id="tree-back-btn" type="button" hidden><span aria-hidden="true">←</span> 返回</button>
+        <nav class="tree-tabs" id="watchlist-tabs" aria-label="追番分区" hidden>
+          <button type="button" data-tree-tab="wanted">待追</button>
+          <button type="button" data-tree-tab="watched">已追</button>
         </nav>
         <nav class="tree-tabs" id="personal-tabs" aria-label="个人中心分区" hidden>
           <button type="button" data-tree-tab="profile">我的档案</button>
-          <button type="button" data-tree-tab="history">发言历史</button>
+          <button type="button" data-tree-tab="history">足迹与分享</button>
           <button type="button" data-tree-tab="settings">个人设置</button>
           <button type="button" data-tree-tab="admin" id="admin-tab" hidden>管理</button>
         </nav>
@@ -190,6 +186,7 @@
       <button class="modal-close" type="button" id="account-close" aria-label="关闭">×</button>
     </div>
     <div id="account-guest">
+      <p id="account-message" class="tree-copy" hidden></p>
       <div class="account-modes" role="group" aria-label="账号操作">
         <button class="outline-button" type="button" data-account-mode="login" aria-pressed="true">登录</button>
         <button class="outline-button" type="button" data-account-mode="register" aria-pressed="false">注册</button>
@@ -220,6 +217,8 @@
   <script src="media-assets.js" defer></script>
   <script src="taste-analysis.js" defer></script>
   <script src="series-data.js" defer></script>
+  <script src="watch-model.js" defer></script>
+  <script src="experience.js" defer></script>
   <script src="app.js" defer></script>
 </body>
 </html>

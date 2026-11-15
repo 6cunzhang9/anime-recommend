@@ -18,7 +18,7 @@ export default async function handler(req) {
       ]);
       return jsonResponse({ ok: true, user: { id: user.id, username: user.username, role: user.role || "member", ...settings }, questionnaires, ratings, reactions });
     }
-    const payload = await readJson(req, 2048);
+    const payload = await readJson(req, 75000);
     if (payload.action === "logout") {
       return jsonResponse({ ok: true }, 200, { "Set-Cookie": await endSession(req) });
     }

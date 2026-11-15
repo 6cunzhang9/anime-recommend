@@ -1,6 +1,7 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { getStore } from "@netlify/blobs";
 import v4 from "../../v4-validation.js";
+import { localStore } from "./local-store.mjs";
 import { unpackRecord } from "./records.mjs";
 
 const STORE_NAME = process.env.BLOBS_STORE_NAME || "anime-soul-responses";
@@ -16,6 +17,7 @@ const SECURITY_HEADERS = {
 };
 
 export function getResponsesStore() {
+  if (process.env.ANIME_LOCAL_STORE) return localStore;
   return getStore({
     name: STORE_NAME,
     consistency: "strong",

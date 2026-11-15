@@ -1,15 +1,35 @@
+import { randomInt } from "node:crypto";
 import { digest, RequestError } from "./auth.mjs";
 import { getResponsesStore } from "./store.mjs";
 
 const profileKey = (id) => `profiles/${id}.json`;
 const sanctionKey = (id) => `sanctions/${id}.json`;
 
-export async function memberSettings(user) {
+async function publicId(store, owner) {
+  const key = `member-codes/${owner}.json`;
+  const existing = await store.get(key, { type: "json" });
+  if (existing?.code) return existing.code;
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  for (let i = 0; i < 12; i++) {
+    const code = Array.from({ length: 6 }, () => alphabet[randomInt(alphabet.length)]).join("");
+    if (!(await store.setJSON(`member-code-index/${code}.json`, { owner }, { onlyIfNew: true })).modified) continue;
+    const result = await store.setJSON(key, { code }, { onlyIfNew: true });
+    if (result.modified) return code;
+    await store.delete(`member-code-index/${code}.json`);
+    return (await store.get(key, { type: "json" })).code;
+  }
+  throw new Error("Could not allocate member code");
+}
+
+export async function memberSettings(user, { includeCode = true } = {}) {
   const store = getResponsesStore();
-  const [settings, sanction] = await Promise.all([
-    store.get(profileKey(user.id), { type: "json" }), store.get(sanctionKey(user.id), { type: "json" })
+  const [settings, sanction, code] = await Promise.all([
+    store.get(profileKey(user.id), { type: "json" }), store.get(sanctionKey(user.id), { type: "json" }),
+    includeCode ? publicId(store, user.id) : null
   ]);
   return {
+    code,
+    avatar: settings?.avatar || "",
     nickname: settings?.nickname || "",
     bio: settings?.bio || "",
     accent: settings?.accent || "jade",
@@ -35,7 +55,11 @@ export async function saveMemberSettings(user, payload) {
       throw new RequestError(409, "这个昵称已被占用");
     }
   }
-  await store.setJSON(profileKey(user.id), { nickname, bio, accent, compact: payload.compact === true });
+  const avatar = typeof payload.avatar === "string" ? payload.avatar : "";
+  if (avatar && (avatar.length > 68000 || !/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(avatar))) {
+    throw new RequestError(400, "头像需为小于 50 KB 的 PNG、JPEG 或 WebP");
+  }
+  await store.setJSON(profileKey(user.id), { nickname, bio, accent, avatar, compact: payload.compact === true });
   return memberSettings(user);
 }
 
@@ -57,8 +81,10 @@ export async function listMembers() {
     const batch = await Promise.all(blobs.slice(i, i + 20).map(async ({ key }) => {
       const user = await store.get(key, { type: "json" });
       if (!user?.id) return null;
-      const { nickname, mutedUntil, moderationReason } = await memberSettings(user);
-      return { id: user.id, username: user.username, nickname, mutedUntil, moderationReason };
+      const [{ nickname, mutedUntil, moderationReason }, code] = await Promise.all([
+        memberSettings(user, { includeCode: false }), store.get(`member-codes/${user.id}.json`, { type: "json" })
+      ]);
+      return { id: user.id, code: code?.code || "", username: user.username, nickname, mutedUntil, moderationReason };
     }));
     members.push(...batch.filter(Boolean));
   }

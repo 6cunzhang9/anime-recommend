@@ -1,5 +1,6 @@
 "use strict";
 
+const watchModel = require("./watch-model.js");
 const standardTaste = require("./taste-analysis.js");
 const seriesCatalog = require("./series-data.js");
 const assessment = require("./test-data.js");
@@ -89,7 +90,9 @@ function validateExternalRef(input, required = false) {
     title_display: title,
     media_type: ["tv", "movie", "ova", "ona", "unknown"].includes(input.media_type) ? input.media_type : "unknown",
     lookup_status: canonicalUrl ? status : "unmatched",
-    resolved_at: input.resolved_at ? ensureDate(input.resolved_at) : null
+    resolved_at: input.resolved_at ? ensureDate(input.resolved_at) : null,
+    year: /^\d{4}$/.test(String(input.year || "")) ? Number(input.year) : null,
+    features: watchModel.tags(input.features, 16)
   };
 }
 
@@ -108,7 +111,7 @@ function validateFavorites(input) {
     const strength = LIKE_STRENGTHS.some((item) => item.code === entry.like_strength) ? entry.like_strength : null;
     if (!strength) fail(`第 ${index + 1} 部喜欢强度不正确`);
     const reasons = Array.isArray(entry.reasons) ? [...new Set(entry.reasons.map((code) => cleanText(code, 40)))] : [];
-    if (!reasons.length) fail(`第 ${index + 1} 部至少选择 1 个理由`);
+    if (!entry.review && !reasons.length) fail(`第 ${index + 1} 部至少选择 1 个理由`);
     if (reasons.length > 4) fail(`第 ${index + 1} 部理由最多 4 个`);
     if (reasons.some((code) => !FAVORITE_REASONS.some((reason) => reason.code === code))) {
       fail(`第 ${index + 1} 部包含未知理由`);
@@ -117,7 +120,10 @@ function validateFavorites(input) {
     if (reasons.includes("reason_other") && reasonText.length < 2) {
       fail(`第 ${index + 1} 部选择了“其他”，请补充至少 2 个字`);
     }
+    const review = watchModel.review(entry.review);
+    if (entry.review && !review) fail("评价每项维度均需选择 1–10 分");
     return {
+      ...(review && { review }),
       title_raw: title,
       work_type: workType,
       external_ref: validateExternalRef(entry.external_ref, false),
@@ -188,6 +194,9 @@ function validateQuestionnaire(payload) {
     answers[question.id] = validateAnswer(question, payload.answers[question.id]);
   });
   const favorites = validateFavorites(payload.actual_favorites || payload.answers.q40);
+  if (payload.evaluation_version === "shared-1" && favorites.some((favorite) => !favorite.review)) {
+    fail("每部本命番的每项维度均需选择 1–10 分");
+  }
   answers.q40 = { favorites };
   const consentInput = payload.consent && typeof payload.consent === "object" ? payload.consent : {};
   const consent = {
@@ -205,6 +214,8 @@ function validateQuestionnaire(payload) {
     locale: cleanText(payload.locale, 30) || "zh-CN",
     source,
     answers,
+    preferences: watchModel.choices(payload.preferences),
+    ...(payload.evaluation_version === "shared-1" && { evaluation_version: "shared-1" }),
     completion: {
       answered_required: 40,
       total_required: 40,
@@ -258,6 +269,8 @@ function validateRating(payload) {
   const id = cleanText(payload.id, 100);
   if (!id) fail("评价 ID 不能为空");
   const workRef = validateExternalRef(payload.external_ref || payload.work_ref, true);
+  const review = watchModel.review(payload.review);
+  if ((payload.review || payload.evaluation_version === "shared-1") && !review) fail("评价每项维度均需选择 1–10 分");
   const status = REVIEW_STATUSES.has(payload.status) ? payload.status : null;
   if (!status) fail("评价状态不正确");
   const rating = payload.rating === null || payload.rating === undefined || payload.rating === ""
@@ -270,6 +283,7 @@ function validateRating(payload) {
   return {
     schemaVersion: 4,
     id,
+    ...(review && { review }),
     external_ref: workRef,
     work_ref: workRef,
     status,

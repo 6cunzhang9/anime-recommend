@@ -1,3 +1,4 @@
+import { threadSummary } from "../shared/discussions.mjs";
 import v4 from "../../v4-validation.js";
 import { errorResponse, jsonResponse } from "../shared/store.mjs";
 
@@ -17,7 +18,8 @@ export default async function handler(req) {
     const query = v4.normalizeWorkTitle(params.get("q")?.slice(0, 120));
     const type = ["review", "favorite"].includes(params.get("type")) ? params.get("type") : "";
     const page = pagePosts(await readPostRecords(type), { query, cursor, type });
-    return jsonResponse({ ok: true, ...page });
+    const posts = await Promise.all(page.posts.map(async (post) => ({ ...post, ...(await threadSummary(post.id)) })));
+    return jsonResponse({ ok: true, ...page, posts });
   } catch (error) {
     console.error("reviews function failed:", error);
     return errorResponse(500, "读取树洞评价失败");

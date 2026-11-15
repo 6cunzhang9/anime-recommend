@@ -1,9 +1,16 @@
 import { createHash } from "node:crypto";
 import v4 from "../../v4-validation.js";
-import { publicationFor } from "./records.mjs";
-import { readAllRatings, readAllRecords } from "./store.mjs";
+import { changeEntry, packQuestionnaire, publicationFor } from "./records.mjs";
+import { readAllRatings, readAllRecords, responseKey } from "./store.mjs";
 
 export const cursorPattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z\/[a-f0-9]{64}$/;
+
+export function withdrawFavorite(store, owner, id) {
+  return changeEntry(store, responseKey(id, owner), (record) => {
+    if (!record?.publication || record.publication.deleted_at) return null;
+    return packQuestionnaire({ ...record, publication: { ...record.publication, deleted_at: new Date().toISOString() } });
+  });
+}
 
 export function postFromRecord(record) {
   const publication = publicationFor(record);
@@ -16,6 +23,7 @@ export function postFromRecord(record) {
       if (!favorite?.title_raw) return [];
       return [{
         external_ref: v4.validateExternalRef(favorite.external_ref || { provider: "manual", title_display: favorite.title_raw }, true),
+        review: favorite.review || null,
         strength: favorite.like_strength,
         reasons: favorite.reasons || [],
         comment: favorite.reason_text || ""
@@ -23,13 +31,14 @@ export function postFromRecord(record) {
     })
     : [{
       external_ref: v4.validateExternalRef(record.external_ref || record.work_ref, true),
+      review: record.review || null,
       rating: record.rating,
       sentiment: record.sentiment,
       status: record.status,
       comment: record.comment
     }];
   return {
-    type, works, published_at: publication.published_at, moderated: publication.moderated === true,
+    id: publicId, type, works, published_at: publication.published_at, moderated: publication.moderated === true,
     target: { owner: record.accountOwner, id, type }, sortKey: `${publication.published_at}/${publicId}`
   };
 }
