@@ -1,7 +1,7 @@
 import {
   checkAdmin,
   errorResponse,
-  joinFeedback,
+  readAllRatings,
   readAllReactions,
   readAllRecords,
   recordsToCsv
@@ -31,30 +31,29 @@ export default async function handler(req) {
 
     const records = await readAllRecords();
     const reactions = await readAllReactions();
-    const joined = joinFeedback(records, reactions);
+    const ratings = await readAllRatings();
+    const questionnaires = records.filter((record) => Number(record.schemaVersion) === 4);
+    const legacy = records.filter((record) => Number(record.schemaVersion) !== 4);
     const stamp = new Date().toISOString().slice(0, 10);
     let body;
     let contentType;
     let extension = format;
 
     if (format === "csv") {
-      body = recordsToCsv(joined);
+      body = recordsToCsv(records, reactions);
       contentType = "text/csv; charset=utf-8";
     } else if (format === "json") {
-      body = JSON.stringify(
-        {
-          exportedAt: new Date().toISOString(),
-          schemaVersion: 3,
-          count: joined.length,
-          responses: joined,
-          reactions
-        },
-        null,
-        2
-      );
+      body = JSON.stringify({
+        exported_at: new Date().toISOString(),
+        schema_version: 4,
+        questionnaires,
+        legacy_questionnaires: legacy,
+        reactions,
+        ratings
+      }, null, 2);
       contentType = "application/json; charset=utf-8";
     } else {
-      body = joined.map((record) => JSON.stringify(record)).join("\n");
+      body = records.map((record) => JSON.stringify(record)).join("\n");
       if (body) body += "\n";
       contentType = "application/x-ndjson; charset=utf-8";
       extension = "jsonl";

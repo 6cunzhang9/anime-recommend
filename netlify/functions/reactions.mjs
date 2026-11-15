@@ -1,7 +1,7 @@
 import { errorResponse, getRecord, getResponsesStore, jsonResponse, reactionKey } from "../shared/store.mjs";
-import { ValidationError, validateReaction } from "../shared/validation.mjs";
+import { ValidationError, validateFeedback } from "../shared/validation.mjs";
 
-const MAX_BODY_BYTES = 8 * 1024;
+const MAX_BODY_BYTES = 12 * 1024;
 
 export const config = {
   path: "/api/reactions",
@@ -10,7 +10,7 @@ export const config = {
     action: "rate_limit",
     aggregateBy: "ip",
     windowSize: 60,
-    windowLimit: 30
+    windowLimit: 40
   }
 };
 
@@ -30,16 +30,14 @@ export default async function handler(req) {
     } catch {
       return errorResponse(400, "请求内容不是合法的 JSON");
     }
-
-    const reaction = validateReaction(payload);
-    const record = await getRecord(reaction.responseId);
-    if (!record) return errorResponse(404, "找不到对应的匿名样本");
-    const allowed = (record.recommendations || []).some((item) => item.animeId === reaction.animeId);
-    if (!allowed) return errorResponse(400, "只能反馈本次推荐的作品");
-
+    const feedback = validateFeedback(payload);
+    const record = await getRecord(feedback.responseId);
+    if (!record) return errorResponse(404, "找不到对应的匿名问卷");
+    const recommended = (record.recommendation_snapshot?.top || []).some((item) => item.anime_id === feedback.animeId);
+    if (!recommended) return errorResponse(400, "只能反馈本次推荐的作品");
     const store = getResponsesStore();
-    await store.setJSON(reactionKey(reaction.responseId, reaction.animeId), reaction);
-    return jsonResponse({ ok: true, receivedAt: reaction.receivedAt }, 201);
+    await store.setJSON(reactionKey(feedback.responseId, feedback.animeId), feedback);
+    return jsonResponse({ ok: true, receivedAt: feedback.receivedAt }, 201);
   } catch (error) {
     if (error instanceof ValidationError) return errorResponse(error.status, error.message);
     console.error("reactions function failed:", error);

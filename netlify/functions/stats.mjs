@@ -1,4 +1,5 @@
-import { errorResponse, jsonResponse, readAllRecords, summarize } from "../shared/store.mjs";
+import v4 from "../../v4-validation.js";
+import { errorResponse, jsonResponse, readAllRecords } from "../shared/store.mjs";
 
 export const config = {
   path: "/api/stats",
@@ -14,7 +15,7 @@ export const config = {
 export default async function handler() {
   try {
     const records = await readAllRecords();
-    return jsonResponse({ ok: true, ...summarize(records) });
+    return jsonResponse({ ok: true, ...v4.summarize(records) });
   } catch (error) {
     console.error("stats function failed:", error);
     return errorResponse(500, "读取统计数据失败");
