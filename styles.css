@@ -542,6 +542,7 @@ a { color: var(--green); }
   align-items: flex-start;
   justify-content: space-between;
   gap: 1.2rem;
+  min-width: 0;
   min-height: 104px;
   padding: 0.85rem 0.7rem;
   border: 1px solid var(--line);
@@ -566,7 +567,32 @@ a { color: var(--green); }
   font-size: 0.62rem;
 }
 .scale-option.is-selected .scale-number { border-color: rgba(255,255,255,0.55); color: #fff; }
-.scale-label { font-size: 0.68rem; line-height: 1.4; white-space: nowrap; }
+.scale-label { min-width: 0; max-width: 100%; font-size: 0.68rem; line-height: 1.45; white-space: normal; overflow-wrap: anywhere; }
+#next-exploration { margin-top: 1rem; }
+
+@media (max-width: 600px) {
+  .scale-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .scale-grid > :last-child:nth-child(odd) { grid-column: 1 / -1; }
+}
+
+@media (max-width: 385px) {
+  .scale-grid { grid-template-columns: minmax(0, 1fr); }
+  .scale-grid .scale-option { flex-direction: row; align-items: center; justify-content: flex-start; min-height: 3rem; }
+  .scale-number { flex: 0 0 25px; }
+}
+
+:root[data-accent="blue"] { --green: #2d6785; --green-dark: #204d65; --green-soft: #edf5fa; --green-line: #b8d6e6; }
+:root[data-accent="amber"] { --green: #87543b; --green-dark: #69402c; --green-soft: #fbf2ec; --green-line: #e1c4ad; }
+.compact-feed .public-review { padding: 0.75rem; margin-bottom: 0.45rem; }
+.compact-feed .post-work + .post-work { margin-top: 0.5rem; padding-top: 0.5rem; }
+.dimensions-list { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0.3rem 1rem; margin: 1rem 0; font-size: 0.78rem; }
+.dimensions-list dd { margin: 0; font-variant-numeric: tabular-nums; }
+.admin-member { overflow-wrap: anywhere; }
+.admin-member form { grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr)); align-items: end; margin-bottom: 0.7rem; }
+.admin-member form label input { display: block; width: 100%; }
+.series-result { border: 1px solid var(--line); border-radius: 8px; padding: 0.5rem; }
+.series-result summary { cursor: pointer; color: var(--green-dark); padding: 0.35rem; }
+.series-result .series-options { display: grid; gap: 0.3rem; padding: 0.3rem 0 0.2rem 0.65rem; }
 
 .scenario-option {
   display: flex;
@@ -1483,6 +1509,8 @@ a { color: var(--green); }
 .tree-form { display: grid; gap: 0.6rem; margin-top: 0.7rem; }
 .tree-form .field-group { margin: 0; }
 .tree-form label { display: block; margin-bottom: 0.25rem; color: var(--muted); font-size: 0.62rem; }
+.tree-form .publish-option { display: flex; }
+.tree-form input[type="checkbox"] { width: auto; }
 .tree-form .consent-row { display: flex; margin: 0.2rem 0; }
 .tree-form .consent-copy { font-size: 0.62rem; }
 .tree-rating-list { display: grid; gap: 0.4rem; }

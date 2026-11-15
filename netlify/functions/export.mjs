@@ -43,7 +43,7 @@ export default async function handler(req) {
         score, ratings.filter((rating) => rating.rating === score).length
       ])),
       public_reviews: ratings.filter((rating) => rating.public_review === true && rating.accountOwner && !rating.publication?.moderated).length,
-      public_favorite_posts: records.filter((record) => record.accountOwner && record.publication?.published_at && !record.publication.moderated).length,
+      public_favorite_posts: records.filter((record) => record.accountOwner && record.publication?.published_at && !record.publication.moderated && !record.publication.deleted_at).length,
       recommendation_feedback: reactions.length,
       community_picks: records.reduce((totals, record) => {
         const source = record.recommendation_snapshot?.community_pick?.source;

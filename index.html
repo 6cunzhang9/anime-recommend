@@ -99,8 +99,7 @@
 
           <div class="publish-note">
             <strong id="favorite-publish-label">匿名发到树洞</strong>
-            <p id="favorite-publish-note">树洞显示这一步填写的作品和理由。完整问卷与推荐结果保存在账号档案。</p>
-            <label class="publish-option"><input id="consent-similar" type="checkbox"> 参与相似口味推荐</label>
+            <p id="favorite-publish-note">树洞显示这一步填写的作品和理由。审美维度和推荐结果保存在账号档案。</p>
           </div>
 
           <button class="primary-button submit-button" id="submit-favorites" type="submit">发布并查看推荐</button>
@@ -139,6 +138,7 @@
         <section class="recommendation-section" aria-labelledby="recommendation-heading">
           <div class="rec-heading"><h2 id="recommendation-heading">为你精选</h2></div>
           <div class="recommendation-list" id="recommendations"></div>
+          <button class="outline-button" id="next-exploration" type="button" hidden>换一部探索推荐</button>
         </section>
 
         <section class="community-section" id="community-section" aria-labelledby="community-heading" hidden>
@@ -160,16 +160,17 @@
         <div class="tree-topline">
           <button class="test-exit" id="tree-back-btn" type="button"><span aria-hidden="true">←</span> 返回</button>
           <div>
-            <h1>树洞</h1>
+            <h1 id="area-title">树洞</h1>
           </div>
-          <button class="outline-button js-retake" type="button">重新测试</button>
         </div>
-        <nav class="tree-tabs" aria-label="树洞分区">
+        <nav class="tree-tabs" id="community-tabs" aria-label="树洞分区">
           <button type="button" data-tree-tab="reviews" class="is-active">社区发言</button>
           <button type="button" data-tree-tab="library">写评价</button>
+        </nav>
+        <nav class="tree-tabs" id="personal-tabs" aria-label="个人中心分区" hidden>
           <button type="button" data-tree-tab="profile">我的档案</button>
-          <button type="button" data-tree-tab="history">历史</button>
-          <button type="button" data-tree-tab="data">说明</button>
+          <button type="button" data-tree-tab="history">发言历史</button>
+          <button type="button" data-tree-tab="settings">个人设置</button>
           <button type="button" data-tree-tab="admin" id="admin-tab" hidden>管理</button>
         </nav>
         <div id="tree-content" class="tree-content"></div>
@@ -180,7 +181,6 @@
   <footer class="site-footer">
     <div class="footer-links">
       <button type="button" id="help-open">数据与推荐说明</button>
-      <button type="button" id="admin-open-btn">管理员</button>
     </div>
   </footer>
 
@@ -210,15 +210,6 @@
         <button class="primary-button" type="submit" id="account-submit">登录</button>
       </form>
     </div>
-    <div id="account-member" hidden>
-      <p id="account-name"></p>
-      <div class="tree-actions">
-        <button class="outline-button" type="button" id="account-profile">我的档案</button>
-        <button class="outline-button" type="button" id="account-admin" hidden>管理主页</button>
-        <button class="outline-button" type="button" id="account-import">导入旧测评档案</button>
-        <button class="text-button" type="button" id="account-logout">退出登录</button>
-      </div>
-    </div>
     <p id="account-status" class="tree-copy" role="status"></p>
   </dialog>
 
@@ -227,6 +218,8 @@
   <script src="test-data.js" defer></script>
   <script src="catalog.js" defer></script>
   <script src="media-assets.js" defer></script>
+  <script src="taste-analysis.js" defer></script>
+  <script src="series-data.js" defer></script>
   <script src="app.js" defer></script>
 </body>
 </html>

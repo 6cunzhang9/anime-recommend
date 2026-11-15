@@ -8,7 +8,7 @@ export const cursorPattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z\/[a-f
 export function postFromRecord(record) {
   const publication = publicationFor(record);
   const type = record.response_id ? "favorite" : "review";
-  if (!record.accountOwner || !publication?.published_at) return null;
+  if (!record.accountOwner || !publication?.published_at || publication.deleted_at) return null;
   const id = type === "favorite" ? record.response_id : record.id;
   const publicId = createHash("sha256").update(`${type}:${record.accountOwner}:${id}`).digest("hex");
   const works = type === "favorite"

@@ -1,4 +1,5 @@
 import v4 from "../../v4-validation.js";
+import { checkCanPublish } from "../shared/members.mjs";
 import { checkAccountContext, digest, getUser, keyPart, readJson, RequestError } from "../shared/auth.mjs";
 import { errorResponse, getResponsesStore, jsonResponse, ratingKey } from "../shared/store.mjs";
 import { changeEntry, packRating, publicationFor } from "../shared/records.mjs";
@@ -29,6 +30,7 @@ export default async function handler(req) {
       await store.delete(ratingKey(payload.id, user.id));
       return jsonResponse({ ok: true });
     }
+    if (user) await checkCanPublish(user);
     const rating = validateRating(payload);
     if (!keyPart.test(rating.id)) return errorResponse(400, "评价编号无效");
     const editing = payload.action === "update";

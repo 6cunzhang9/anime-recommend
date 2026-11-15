@@ -3,7 +3,7 @@
 (function () {
   "use strict";
 
-  const ALGORITHM_VERSION = "rec-v4.0.0-initial";
+  const ALGORITHM_VERSION = "rec-v5-balanced";
   const PROFILE_VERSION = "profile-v4.0.0";
   const SESSION_KEY = "anime-soul-lab:session:v4";
   const RECORDS_KEY = "anime-soul-lab:questionnaires:v4";
@@ -14,15 +14,14 @@
 
   const CONFIG = {
     version: ALGORITHM_VERSION,
-    anchor: 0.42,
-    taste: 0.40,
-    context: 0.06,
+    anchor: 0.32,
+    taste: 0.50,
+    context: 0.08,
     craft: 0.08,
-    quality: 0.04,
+    quality: 0.02,
     avoidancePenalty: 0.34,
     repeatPenalty: 0.12,
     diversityPenalty: 0.18,
-    maxCandidatesForDiversity: 12,
     note: "初始权重，未经大样本验证；锚点与直接审美高于情境、质量与人格自述。"
   };
 
@@ -124,7 +123,6 @@
     favoritesForm: $("#favorites-form"),
     favoriteEntries: $("#favorite-entries"),
     addFavorite: $("#add-favorite"),
-    consentSimilar: $("#consent-similar"),
     submitFavorites: $("#submit-favorites"),
     favoritesError: $("#favorites-error"),
     loadingTitle: $("#loading-title"),
@@ -141,7 +139,6 @@
     resultHeading: $(".result-heading"),
     treeBackButton: $("#tree-back-btn"),
     treeContent: $("#tree-content"),
-    adminOpenButton: $("#admin-open-btn"),
     accountModal: $("#account-modal"),
     toast: $("#toast")
   };
@@ -164,7 +161,7 @@
   }
 
   function scrollToTop() {
-    window.scrollTo({ top: 0, behavior: prefersReducedMotion() ? "auto" : "smooth" });
+    window.scrollTo({ top: 0, behavior: "instant" });
   }
 
   function showToast(message) {
@@ -300,6 +297,10 @@
 
   function catalogAnimeForRef(ref) {
     if (!ref) return null;
+    if (ref.provider === "series") {
+      const group = ANIME_SERIES.byId.get(ref.provider_id);
+      return ANIME_CATALOG.find((anime) => group?.members.includes(anime.id)) || null;
+    }
     const titles = [ref.title_display, ref.title_canonical].map(normalizeTitle).filter(Boolean);
     return ANIME_CATALOG.find((anime) => {
       if (["anilist", "anilist-candidate-snapshot"].includes(ref.provider) && ref.provider_id) {
@@ -312,6 +313,9 @@
 
   function sameWork(left, right) {
     if (!left || !right) return false;
+    if (["series", "bangumi-series"].includes(left.provider) || ["series", "bangumi-series"].includes(right.provider)) {
+      return left.provider === right.provider && left.provider_id === right.provider_id;
+    }
     const provider = (ref) => ref.provider === "anilist-candidate-snapshot" ? "anilist" : ref.provider;
     if (left.provider_id && right.provider_id && provider(left) === provider(right)) {
       return String(left.provider_id) === String(right.provider_id);
@@ -352,11 +356,69 @@
   function findWorks(query) {
     const key = normalizeTitle(query);
     if (workSearches.has(key)) return workSearches.get(key);
-    const lookup = lookupWorks(query);
+    const lookup = lookupWorks(query).then(async ({ items, exact, fallback }) => {
+      const series = ANIME_SERIES.all.find((group) => [group.title, ...group.aliases].some((name) =>
+        normalizeTitle(name) === key));
+      if (series) {
+        const members = ANIME_CATALOG.filter((anime) => series.members.includes(anime.id)).map((anime) =>
+          ({ ...externalRefForAnime(anime), year: anime.year }));
+        for (const member of members) if (!items.some((ref) => sameWork(ref, member))) items.push(member);
+      }
+      if (!series && exact?.provider === "bangumi" && !ANIME_SERIES.identify(exact, catalogAnimeForRef(exact))) {
+        try {
+          const data = await apiJson(`/api/anime-search?related=${encodeURIComponent(exact.provider_id)}`, undefined, 2800);
+          if (data.items?.length) {
+            const root = data.root || exact;
+            const remoteSeries = { id: `bgm-${root.provider_id}`, bangumiId: root.provider_id, title: root.title_display };
+            const children = [exact, ...data.items].filter((ref, index, all) =>
+              all.findIndex((other) => sameWork(ref, other)) === index);
+            return { items: [...children, ...items.filter((ref) => !children.some((other) => sameWork(other, ref)))],
+              exact: root.provider_id === exact.provider_id ? null : exact, fallback,
+              series: remoteSeries, grouped: new Set(children.map((ref) => ref.provider_id)) };
+          }
+        } catch { /* Keep the normal search results. */ }
+      }
+      return { items, exact: series ? null : exact, fallback, series };
+    });
     workSearches.set(key, lookup);
     lookup.then(({ fallback }) => { if (fallback) workSearches.delete(key); });
     if (workSearches.size > 30) workSearches.delete(workSearches.keys().next().value);
     return lookup;
+  }
+
+  function renderWorkChoices(container, items, choose, { favorite = false, series, grouped } = {}) {
+    const groups = new Map();
+    const singles = [];
+    const add = (target, ref) => {
+      const button = searchResultButton(ref, favorite);
+      button.addEventListener("click", () => choose(ref));
+      target.append(button);
+    };
+    if (series) groups.set(series, []);
+    for (const ref of items) {
+      const group = ref.provider === "bangumi" && grouped?.has(ref.provider_id) ? series
+        : ANIME_SERIES.identify(ref, catalogAnimeForRef(ref));
+      if (!group) singles.push(ref);
+      else {
+        if (!groups.has(group)) groups.set(group, []);
+        groups.get(group).push(ref);
+      }
+    }
+    for (const [group, children] of groups) {
+      const details = document.createElement("details");
+      details.className = "series-result";
+      details.open = Boolean(series === group || groups.size === 1 && !singles.length);
+      const label = document.createElement("summary");
+      label.textContent = group.title + " · 系列";
+      const options = document.createElement("div");
+      options.className = "series-options";
+      const pickSeries = textButton("选择整个系列", () => choose(ANIME_SERIES.reference(group)));
+      options.append(pickSeries);
+      for (const ref of children.sort((a, b) => (a.year || 0) - (b.year || 0))) add(options, ref);
+      details.append(label, options);
+      container.append(details);
+    }
+    for (const ref of singles) add(container, ref);
   }
 
   function searchResultButton(ref, favorite = false) {
@@ -460,10 +522,6 @@
     state.ratings = Array.isArray(ratings) ? ratings : [];
   }
 
-  function saveRatings() {
-    saveLocalJson(RATINGS_KEY, state.ratings);
-  }
-
   function buildSessionSnapshot() {
     return {
       version: 4,
@@ -552,7 +610,6 @@
     state.saveMode = session.saveMode || null;
     state.editingResponseId = session.editingResponseId || null;
     state.feedback = session.feedback && typeof session.feedback === "object" ? session.feedback : {};
-    dom.consentSimilar.checked = state.consent.similar_taste_anonymous_use;
 
     try {
       window.sessionStorage.setItem(ACTIVE_TAB_KEY, "1");
@@ -622,7 +679,6 @@
     state.lastAnswerAt = state.testStartedAt;
     state.locked = false;
     state.sessionReady = true;
-    dom.consentSimilar.checked = false;
     showScreen("test");
     renderQuestion();
     saveSession();
@@ -1032,7 +1088,6 @@
 
   function showFavoriteScreen() {
     ensureFavoritesDraft();
-    dom.consentSimilar.checked = state.consent.similar_taste_anonymous_use;
     renderFavoriteEntries();
     showScreen("favorites");
     updateProgress();
@@ -1043,9 +1098,9 @@
     const local = !state.accountsAvailable;
     const archive = Boolean(state.editingResponseId && state.record && !state.record.publication);
     $("#favorite-publish-label").textContent = local ? "本机预览" : archive ? "更新旧测评档案" : "匿名发到树洞";
-    $("#favorite-publish-note").textContent = local ? "当前环境只在此浏览器生成并保存结果。"
+    $("#favorite-publish-note").textContent = local ? "当前环境会在此浏览器生成并保存结果。"
       : archive ? "这份旧测评会维持原有可见范围。"
-      : "树洞显示这一步的作品和理由。完整问卷与推荐结果保存在账号档案。";
+      : "树洞显示这一步的作品和理由。审美维度和推荐结果保存在账号档案。";
     dom.submitFavorites.textContent = archive || local ? "保存并查看推荐"
       : state.editingResponseId ? "更新发言并查看推荐" : "发布并查看推荐";
   }
@@ -1070,7 +1125,7 @@
 
   function setFavoriteMatch(entry, ref, titleInput, status, results) {
     const { year, ...external_ref } = ref;
-    const anime = catalogAnimeForRef(ref);
+    const anime = ref.provider === "series" ? null : catalogAnimeForRef(ref);
     const type = anime ? externalRefForAnime(anime).media_type : ref.media_type;
     entry.title_raw = ref.title_display.slice(0, 120);
     entry.work_type = type || entry.work_type;
@@ -1089,22 +1144,18 @@
   async function searchFavoriteResults(entry, query, titleInput, status, results) {
     results.hidden = false;
     results.textContent = "搜索中…";
-    const { items, exact } = await findWorks(query.trim());
+    const { items, exact, series, grouped } = await findWorks(query.trim());
     if (!results.isConnected || titleInput.value !== query || entry.external_ref) return;
-    if (exact) {
+    if (exact && !grouped && !series) {
       setFavoriteMatch(entry, exact, titleInput, status, results);
       return;
     }
     results.replaceChildren();
-    if (!items.length) {
+    if (!items.length && !series) {
       results.textContent = "可直接使用原题名。";
       return;
     }
-    for (const ref of items) {
-      const button = searchResultButton(ref, true);
-      button.addEventListener("click", () => setFavoriteMatch(entry, ref, titleInput, status, results));
-      results.append(button);
-    }
+    renderWorkChoices(results, items, (ref) => setFavoriteMatch(entry, ref, titleInput, status, results), { favorite: true, series, grouped });
     const manual = document.createElement("button");
     manual.type = "button";
     manual.className = "text-button";
@@ -1331,15 +1382,15 @@
       const title = String(entry.title_raw || "").trim();
       let ref = entry.external_ref;
       if (!ref) {
-        const { exact, items } = await findWorks(title);
+        const { exact, items, series } = await findWorks(title);
         const selected = entry.external_ref;
         ref = selected || exact;
-        if (!ref && items.length) throw new Error(`请为「${title}」选择条目，或点击「使用原题名」。`);
+        if (!ref && (items.length || series)) throw new Error(`请为「${title}」选择条目，或点击「使用原题名」。`);
         ref ||= manualRef(title);
       }
       const { year, ...external_ref } = ref;
       const matched = external_ref.lookup_status === "matched";
-      const anime = matched ? catalogAnimeForRef(external_ref) : null;
+      const anime = matched && external_ref.provider !== "series" ? catalogAnimeForRef(external_ref) : null;
       return {
         title_raw: (matched ? external_ref.title_display : title).slice(0, 120),
         work_type: anime ? externalRefForAnime(anime).media_type : entry.work_type,
@@ -1381,7 +1432,7 @@
     dom.submitFavorites.disabled = true;
     $("#account-open").disabled = true;
     dom.submitFavorites.textContent = "正在生成推荐…";
-    state.consent = { profile_storage: true, similar_taste_anonymous_use: dom.consentSimilar.checked };
+    state.consent = { profile_storage: true, similar_taste_anonymous_use: true };
 
     try {
       const favorites = await normalizedFavorites(validation.entries);
@@ -1394,8 +1445,8 @@
       showScreen("loading");
       dom.loadingTitle.textContent = "正在整理你的回答";
       const profile = deriveProfile(state.answers, favorites);
-      const result = buildRecommendations(profile, favorites);
       const responseId = state.editingResponseId || uid();
+      const result = buildRecommendations(profile, favorites, { seed: responseId });
       const record = buildQuestionnaireRecord(responseId, profile, favorites, result);
       const previous = state.editingResponseId && state.record;
       if (previous) {
@@ -1453,6 +1504,7 @@
   function deriveProfile(answers, favorites) {
     const profile = {
       profile_version: PROFILE_VERSION,
+      dimensions: ANIME_TASTE.userDimensions(answers),
       computed_at: new Date().toISOString(),
       context: {
         watch_experience_band: answers.q01 || null,
@@ -1606,6 +1658,7 @@
           cluster_key: entry.clusterKey,
           evidence: entry.evidence.map((item) => item.text)
         })),
+        explore_index: result.exploration.index,
         candidates_considered: result.candidateCount,
         filtered: result.filtered
       },
@@ -1969,9 +2022,10 @@
   function buildAnchors(favorites) {
     const anchors = [];
     favorites.forEach((favorite) => {
-      const anime = anchorAnimeForEntry(favorite);
-      if (!anime) return;
-      anchors.push({ anime, weight: favoriteWeight(favorite), source: "q40", title: favorite.title_raw, reasons: favorite.reasons });
+      const series = favorite.external_ref?.provider === "series" && ANIME_SERIES.byId.get(favorite.external_ref.provider_id);
+      const works = series ? ANIME_CATALOG.filter((anime) => series.members.includes(anime.id)) : [anchorAnimeForEntry(favorite)].filter(Boolean);
+      works.forEach((anime) => anchors.push({ anime, weight: favoriteWeight(favorite) / works.length,
+        source: "q40", title: favorite.title_raw, reasons: favorite.reasons }));
     });
     state.legacyRecords.forEach((record) => {
       const title = record.actualFavorite?.title || record.actual_favorites?.[0]?.title_raw;
@@ -2136,23 +2190,29 @@
       }
     }
     if (evidence.length < 2) {
-      evidence.push({ text: `本作通过了双平台口碑门槛，且在候选簇（${clusterKey(anime)}）中与本次回答的若干维度相交；这不是“同类题材必然喜欢”的断言。`, source: "quality_gate" });
+      evidence.push({ text: `本作在「${clusterKey(anime)}」风格上和你的审美维度有交集。`, source: "quality_gate" });
     }
     return evidence.slice(0, 4);
   }
 
-  function buildRecommendations(profile, favorites) {
+  const workDimensions = new Map(ANIME_CATALOG.map((anime) => [anime.id, ANIME_TASTE.workDimensions(anime)]));
+
+  function buildRecommendations(profile, favorites, { seed = "", exploreIndex } = {}) {
     const anchors = buildAnchors(favorites);
     const weights = buildTasteWeights(profile);
     const favoriteIds = new Set(
       anchors.filter((anchor) => anchor.source === "q40").map((anchor) => anchor.anime.id)
     );
-    const eligible = ANIME_CATALOG.filter((anime) => anime.quality?.eligible);
+    const eligible = ANIME_CATALOG;
+    const userAxes = profile.dimensions || ANIME_TASTE.userDimensions(state.answers);
+    const knownSeries = new Set(favorites.filter(({ external_ref }) => external_ref?.provider === "series")
+      .map(({ external_ref }) => external_ref.provider_id));
     const filtered = [];
     const scored = [];
 
     eligible.forEach((anime) => {
-      if (favoriteIds.has(anime.id)) {
+      const series = ANIME_SERIES.identify(null, anime);
+      if (favoriteIds.has(anime.id) || knownSeries.has(series?.id)) {
         filtered.push({ animeId: anime.id, reason: "already_in_favorites" });
         return;
       }
@@ -2160,7 +2220,10 @@
         filtered.push({ animeId: anime.id, reason: "hard_exclusion" });
         return;
       }
-      const taste = featureScore(anime.features, weights.features) * 0.72 + tagMatchScore(anime, weights.tags) * 0.28;
+      const dimensionMatch = ANIME_TASTE.affinity(userAxes, workDimensions.get(anime.id));
+      const tagMatch = tagMatchScore(anime, weights.tags);
+      const genreMatch = featureScore(anime.features, weights.features);
+      const taste = dimensionMatch * 0.46 + genreMatch * 0.37 + tagMatch * 0.17;
       const anchor = anchorAffinity(anime, anchors);
       const context = contextScore(anime, profile);
       const craft = craftScore(anime, weights);
@@ -2182,6 +2245,9 @@
       scored.push({
         anime,
         score,
+        seriesId: series?.id,
+        dimensionMatch,
+        genreMatch,
         anchor,
         taste,
         context,
@@ -2197,8 +2263,10 @@
 
     scored.sort((a, b) => b.score - a.score || (b.anime.quality?.communityScore || 0) - (a.anime.quality?.communityScore || 0));
     const selected = [];
-    while (selected.length < 3 && scored.length) {
-      const pool = scored.filter((entry) => !selected.includes(entry)).slice(0, CONFIG.maxCandidatesForDiversity);
+    const remaining = () => scored.filter((entry) => !selected.includes(entry) &&
+      !selected.some((chosen) => chosen.seriesId && chosen.seriesId === entry.seriesId));
+    while (selected.length < 2 && scored.length) {
+      const pool = remaining();
       if (!pool.length) break;
       let best = null;
       let bestAdjusted = -Infinity;
@@ -2214,10 +2282,19 @@
       if (!best) break;
       best.scoreAdjusted = bestAdjusted;
       best.evidence = buildEvidence(best.anime, profile, anchors, weights);
-      if (selected.length >= 2 && selected.every((picked) => picked.clusterKey !== best.clusterKey)) {
-        best.source = "探索推荐";
-      }
       selected.push(best);
+    }
+
+    const unexplored = remaining();
+    const alternatives = unexplored.filter((entry) =>
+      entry.dimensionMatch >= 0.64 && entry.genreMatch >= 0.17 && entry.avoidance < 0.13 &&
+      (entry.score >= selected[0].score - 0.23 || entry.dimensionMatch >= 0.78));
+    const index = exploreIndex ?? [...seed].reduce((value, char) => (Math.imul(value, 31) + char.charCodeAt(0)) >>> 0, 0);
+    const discovery = alternatives.length ? alternatives[index % alternatives.length] : unexplored[0];
+    if (discovery) {
+      discovery.source = "探索推荐";
+      discovery.evidence = buildEvidence(discovery.anime, profile, anchors, weights);
+      selected.push(discovery);
     }
 
     const top = selected.map((entry, index) => ({
@@ -2229,6 +2306,7 @@
     return {
       top,
       candidateCount: eligible.length,
+      exploration: { index, candidates: alternatives.map((entry) => entry.anime.id) },
       filtered,
       anchors: anchors.map((anchor) => ({ title: anchor.title, animeId: anchor.anime.id, source: anchor.source })),
       profile,
@@ -2358,7 +2436,9 @@
       result.top.forEach((entry, index) => dom.recommendations.append(renderRecommendationCard(entry, index)));
     }
 
+    $("#next-exploration").hidden = !state.record || (result.exploration?.candidates.length || 0) < 2;
     renderResultDetails(result, profile);
+    if (profile.dimensions) dom.resultDetails.append(dimensionsList(profile.dimensions));
     renderResultSaveState();
     renderCommunityPick(state.record?.recommendation_snapshot?.community_pick);
   }
@@ -2366,7 +2446,8 @@
   function renderResultSaveState() {
     const messages = {
       server: "已保存问卷。登录后可导入本机档案。",
-      account: state.record?.publication?.moderated ? "结果已保存。树洞发言已被管理员隐藏。"
+      account: state.record?.publication?.deleted_at ? "推荐已保存，原发言已删除。"
+        : state.record?.publication?.moderated ? "结果已保存。树洞发言已被管理员隐藏。"
         : state.record?.publication ? "本命番已匿名发布，推荐已保存到账号。" : "推荐已保存到账号。",
       "account-error": "云端保存失败。请重试，避免离开页面后丢失结果。",
       local: "已保存在本机。当前未连接收集服务。",
@@ -2439,6 +2520,8 @@
     external.rel = "noopener noreferrer";
     external.textContent = "在 AniList 查看 ↗";
     sourceRow.append(external);
+    const series = ANIME_SERIES.identify(null, anime);
+    if (series) sourceRow.append(workLink(ANIME_SERIES.reference(series), "查看系列条目 ↗"));
 
     const feedback = renderFeedbackControls(entry);
     const details = document.createElement("details");
@@ -2654,7 +2737,7 @@
       ["短期观看状态", currentNeed.length ? currentNeed.join("、") : "无特别目的"],
       ["真实作品锚点", (profile.anchors.actual_favorites || []).map((item) => `《${item.title_raw}》`).join(" ") || "未填写"],
       ["匹配到的候选锚点", result.anchors?.length ? result.anchors.map((item) => `《${item.title}》`).join(" ") : "暂无"],
-      ["候选数量", `${result.candidateCount} 部通过口碑门槛，${result.filtered.length} 部被硬排除`],
+      ["候选数量", `${result.candidateCount} 部参与匹配，${result.filtered.length} 部被硬排除`],
       ["算法配置", `${CONFIG.version} · 锚点 ${Math.round(CONFIG.anchor * 100)}% / 直接审美 ${Math.round(CONFIG.taste * 100)}% / 情境 ${Math.round(CONFIG.context * 100)}%`]
     ];
     rows.forEach(([label, value]) => {
@@ -2703,7 +2786,7 @@
     if (!state.apiOnline) return null;
     const profile = result.profile;
     const taste = profile.taste;
-    const consentSimilar = record.consent?.similar_taste_anonymous_use === true;
+    const consentSimilar = true;
     const favoriteRefs = (record.actual_favorites || []).map((entry) => entry.external_ref || manualRef(entry.title_raw));
     const weights = buildTasteWeights(profile);
     const alreadyKnown = [...result.top.map(({ anime }) => externalRefForAnime(anime)), ...favoriteRefs,
@@ -2712,6 +2795,7 @@
       const data = await apiJson("/api/community", {
         response_id: record.response_id,
         consent_similar: consentSimilar,
+        dimensions: profile.dimensions,
         ...(consentSimilar && { personality: Object.fromEntries(["q05", "q06", "q07", "q08"].map((id) => [id, record.answers[id]])),
         signals: {
           settings: taste.setting_interest,
@@ -2766,6 +2850,10 @@
   function openTree(tab = "reviews") {
     if (state.screen === "loading") return;
     state.treeReturnScreen = state.screen === "tree" ? state.treeReturnScreen : state.screen;
+    if (["profile", "history", "settings", "admin"].includes(tab) && !state.account) {
+      openAccount({ message: "请先登录个人中心。" });
+      return;
+    }
     state.treeTab = tab;
     showScreen("tree");
     renderTree();
@@ -2781,6 +2869,11 @@
   }
 
   function renderTree() {
+    const community = ["reviews", "library"].includes(state.treeTab);
+    const personal = ["profile", "history", "settings", "admin"].includes(state.treeTab);
+    $("#community-tabs").hidden = !community;
+    $("#personal-tabs").hidden = !personal || !state.account;
+    $("#area-title").textContent = community ? "树洞" : personal ? "个人中心" : "数据与推荐说明";
     $$("[data-tree-tab]").forEach((button) => {
       const active = button.dataset.treeTab === state.treeTab;
       button.classList.toggle("is-active", active);
@@ -2792,6 +2885,7 @@
     else if (state.treeTab === "profile") renderTreeProfile(dom.treeContent);
     else if (state.treeTab === "library") renderTreeLibrary(dom.treeContent);
     else if (state.treeTab === "history") renderTreeHistory(dom.treeContent);
+    else if (state.treeTab === "settings") renderPersonalSettings(dom.treeContent);
     else if (state.treeTab === "admin" && state.account?.role === "admin") renderAdminHome(dom.treeContent);
     else renderTreeData(dom.treeContent);
   }
@@ -2846,18 +2940,14 @@
     const current = currentProfileRecord();
     const heading = document.createElement("div");
     heading.className = "tree-section-head";
+    const owner = document.createElement("section");
+    owner.className = "tree-card";
+    owner.append(titleElement(state.account.nickname || `@${state.account.username}`, state.account.bio));
+    container.append(owner);
     const title = document.createElement("h2");
     title.textContent = "我的档案";
     const actions = document.createElement("div");
     actions.className = "tree-actions";
-    if (current) {
-      const exportButton = document.createElement("button");
-      exportButton.type = "button";
-      exportButton.className = "outline-button";
-      exportButton.textContent = "导出我的数据包";
-      exportButton.addEventListener("click", exportUserDataPackage);
-      actions.append(exportButton);
-    }
     heading.append(title, actions);
     container.append(heading);
 
@@ -2892,7 +2982,7 @@
       chip.textContent = item.text;
       evidence.append(chip);
     });
-    intro.append(title2, summary, evidence);
+    intro.append(title2, summary, evidence, dimensionsList(current.record?.analysis?.dimensions || ANIME_TASTE.userDimensions(current.record?.answers || {})));
     container.append(intro);
 
     const context = document.createElement("section");
@@ -2928,7 +3018,8 @@
     const anchors = document.createElement("section");
     anchors.className = "tree-card";
     anchors.append(titleElement("本命番"));
-    const visibility = current.record?.publication?.moderated ? "树洞发言已隐藏"
+    const visibility = current.record?.publication?.deleted_at ? "树洞发言已删除"
+      : current.record?.publication?.moderated ? "树洞发言已隐藏"
       : current.record?.publication ? "已匿名发布到树洞" : "";
     if (visibility) {
       const indicator = document.createElement("p");
@@ -3045,6 +3136,24 @@
       container.append(saved);
     }
 
+    const earlier = state.localRecords.filter((record) => record.response_id !== current.record?.response_id).slice(-20).reverse();
+    if (earlier.length) {
+      const archives = document.createElement("section");
+      archives.className = "tree-card";
+      archives.append(titleElement("往期测评"));
+      for (const record of earlier) {
+        const item = document.createElement("details");
+        const label = document.createElement("summary");
+        label.textContent = `${formatDate(record.submitted_at)} · ${record.actual_favorites?.map(({ title_raw }) => title_raw).join("、") || "测评"}`;
+        item.append(label);
+        if (record.analysis?.dimensions) item.append(dimensionsList(record.analysis.dimensions));
+        const links = savedRecommendationLinks(record);
+        if (links) item.append(links);
+        archives.append(item);
+      }
+      container.append(archives);
+    }
+
     if (state.result) {
       const resultActions = document.createElement("div");
       resultActions.className = "tree-actions";
@@ -3056,6 +3165,19 @@
       resultActions.append(view);
       container.append(resultActions);
     }
+  }
+
+  function dimensionsList(dimensions) {
+    const list = document.createElement("dl");
+    list.className = "dimensions-list";
+    for (const [key, label] of Object.entries(ANIME_TASTE.AXES)) {
+      const name = document.createElement("dt");
+      name.textContent = label;
+      const score = document.createElement("dd");
+      score.textContent = dimensions[key] === undefined ? "—" : `${dimensions[key]} / 100`;
+      list.append(name, score);
+    }
+    return list;
   }
 
   function renderAdminHome(container) {
@@ -3079,7 +3201,7 @@
     head.append(actions);
     const tabs = document.createElement("div");
     tabs.className = "account-modes";
-    for (const [view, label] of [["results", "测评结果"], ["posts", "管理发言"]]) {
+    for (const [view, label] of [["results", "测评结果"], ["posts", "管理发言"], ["users", "用户与处罚"]]) {
       const button = textButton(label, () => {
         state.adminView = view;
         renderTree();
@@ -3089,6 +3211,45 @@
     }
     container.append(head, tabs);
     renderPagedPosts(container, { admin: true, view: state.adminView });
+  }
+
+  function adminMemberControls(member, reload, overline = true) {
+    const card = document.createElement("div");
+    card.className = "admin-member";
+    if (overline) {
+      const content = document.createElement("p");
+      content.className = "tree-copy";
+      content.textContent = `${member.nickname ? `${member.nickname} · ` : ""}@${member.username} · ${member.id}`;
+      card.append(content);
+    }
+    if (member.mutedUntil) card.append(titleElement(`禁言至 ${formatDate(member.mutedUntil)}`, member.moderationReason));
+    const form = document.createElement("form");
+    form.className = "tree-form";
+    const term = labeledSelect("处罚期限", [1, 7, 30].map((days) => ({ code: String(days), label: `禁言 ${days} 天` })), "7");
+    const label = document.createElement("label");
+    label.textContent = "处罚原因";
+    const reason = document.createElement("input");
+    reason.required = true;
+    reason.maxLength = 160;
+    label.append(reason);
+    const apply = document.createElement("button");
+    apply.textContent = "执行禁言";
+    apply.className = "outline-button";
+    form.append(term.wrap, label, apply);
+    const submit = async (days) => {
+      if (!window.confirm(days ? `禁言 @${member.username} ${days} 天？` : `解除 @${member.username} 的禁言？`)) return;
+      apply.disabled = true;
+      try {
+        await apiJson("/api/admin", { action: "sanction", id: member.id, username: member.username,
+          days, reason: reason.value });
+        await reload();
+      } catch (error) { showToast(error.message); }
+      finally { apply.disabled = false; }
+    };
+    form.addEventListener("submit", (event) => { event.preventDefault(); submit(Number(term.select.value)); });
+    card.append(form);
+    if (member.mutedUntil) card.append(textButton("解除禁言", () => submit(0), "text-button"));
+    return card;
   }
 
   function adminResultCard(row) {
@@ -3112,6 +3273,7 @@
           profile.textContent = buildProfileSummary(record.derived_profile);
           detail.append(profile);
         }
+        if (record.analysis?.dimensions) detail.append(dimensionsList(record.analysis.dimensions));
         const links = savedRecommendationLinks(record);
         if (links) detail.append(titleElement("推荐作品"), links);
         const raw = document.createElement("details");
@@ -3144,7 +3306,7 @@
     return fragment;
   }
 
-  async function recalculateRecommendations() {
+  async function recalculateRecommendations({ nextExplore = false } = {}) {
     const profile = state.result?.profile || state.record?.derived_profile;
     if (!profile || !state.record) {
       showToast("还没有可重算的完整问卷。");
@@ -3157,7 +3319,11 @@
       });
     }
     const favorites = state.record.actual_favorites || [];
-    const result = buildRecommendations(profile, favorites);
+    const result = buildRecommendations(profile, favorites, {
+      seed: state.responseId || state.record.response_id,
+      exploreIndex: nextExplore ? (state.result.exploration.index + 1)
+        : state.result?.exploration?.index ?? state.record.recommendation_snapshot?.explore_index
+    });
     state.result = { ...result, profile };
     if (state.record.recommendation_snapshot) {
       if (!Array.isArray(state.record.recommendation_snapshots)) state.record.recommendation_snapshots = [];
@@ -3179,6 +3345,7 @@
         cluster_key: entry.clusterKey,
         evidence: entry.evidence.map((item) => item.text)
       })),
+      explore_index: result.exploration.index,
       candidates_considered: result.candidateCount,
       filtered: result.filtered
     };
@@ -3242,15 +3409,11 @@
       manual.addEventListener("click", () => openReviewEditor(manualRef(keyword), container));
       box.append(heading, list, manual);
       container.append(box);
-      findWorks(keyword).then(({ items, fallback }) => {
+      findWorks(keyword).then(({ items, fallback, series, grouped }) => {
         if (!list.isConnected) return;
         list.replaceChildren();
-        if (!items.length) list.textContent = fallback ? "外部搜索暂不可用，可使用原题名。" : "未找到条目。";
-        for (const ref of items) {
-          const row = searchResultButton(ref);
-          row.addEventListener("click", () => openReviewEditor(ref, container));
-          list.append(row);
-        }
+        if (!items.length && !series) list.textContent = fallback ? "外部搜索暂不可用，可使用原题名。" : "未找到条目。";
+        renderWorkChoices(list, items, (ref) => openReviewEditor(ref, container), { series, grouped });
       });
     }
 
@@ -3258,63 +3421,6 @@
       container.append(renderReviewEditor(container));
     }
 
-    const saved = document.createElement("section");
-    saved.className = "tree-card";
-    saved.append(titleElement("我的评价"));
-    if (!state.ratings.length) {
-      const empty = document.createElement("p");
-      empty.className = "tree-copy";
-      empty.textContent = "还没有评价。搜索一部作品开始。";
-      saved.append(empty);
-    } else {
-      const list = document.createElement("div");
-      list.className = "tree-rating-list";
-      [...state.ratings].sort((a, b) => String(b.updated_at || "").localeCompare(String(a.updated_at || ""))).forEach((rating) => {
-        const row = document.createElement("div");
-        row.className = "tree-rating-item";
-        const info = document.createElement("div");
-        const name = workLink(rating.external_ref);
-        const meta = document.createElement("span");
-        const visibility = rating.publication?.moderated ? " · 已隐藏" : rating.public_review ? "" : " · 旧档案";
-        meta.textContent = `${REVIEW_STATUSES.find((item) => item.code === rating.status)?.label || rating.status} · ${rating.rating ? `${rating.rating}/5` : "未评分"}${visibility}`;
-        if (rating.comment) {
-          const comment = document.createElement("small");
-          comment.textContent = rating.comment;
-          info.append(name, meta, comment);
-        } else {
-          info.append(name, meta);
-        }
-        const actions = document.createElement("div");
-        const edit = document.createElement("button");
-        edit.type = "button";
-        edit.className = "text-button";
-        edit.textContent = "编辑";
-        edit.addEventListener("click", () => openReviewEditor(rating.external_ref, container, rating));
-        const remove = document.createElement("button");
-        remove.type = "button";
-        remove.className = "text-button";
-        remove.textContent = "删除";
-        remove.addEventListener("click", async () => {
-          if (!window.confirm("删除这条评价？")) return;
-          remove.disabled = true;
-          try {
-            if (state.account) await apiJson("/api/ratings", { action: "delete", id: rating.id, account: true, account_username: state.account.username });
-          } catch (error) {
-            showToast(error.message);
-            remove.disabled = false;
-            return;
-          }
-          state.ratings = state.ratings.filter((item) => item.id !== rating.id);
-          saveRatings();
-          renderTreeLibrary(container);
-        });
-        actions.append(edit, remove);
-        row.append(info, actions);
-        list.append(row);
-      });
-      saved.append(list);
-    }
-    container.append(saved);
   }
 
   function openReviewEditor(workRef, container, existing = null, draft = null) {
@@ -3429,7 +3535,6 @@
         const saved = await saveCloudRating(rating, Boolean(existing));
         state.ratings = state.ratings.filter((item) => item.id !== rating.id && item.id !== saved.id);
         state.ratings.push(saved);
-        saveRatings();
       } catch (error) {
         showToast(error.message || "无法保存评价");
         save.disabled = false;
@@ -3437,7 +3542,8 @@
       }
       state.treeSelectedWork = null;
       showToast(existing ? "评价已更新。" : "评价已匿名发布。");
-      renderTreeLibrary(container);
+      if (selected.returnToHistory) openTree("history");
+      else if (state.screen === "tree" && state.treeTab === "library") renderTreeLibrary(container);
     });
 
     card.append(form);
@@ -3491,7 +3597,7 @@
     const input = document.createElement("input");
     input.type = "search";
     input.maxLength = 120;
-    input.placeholder = "按作品名搜索";
+    input.placeholder = view === "users" ? "搜索昵称、用户名或 ID" : "按作品名搜索";
     input.setAttribute("aria-label", input.placeholder);
     const search = document.createElement("button");
     search.type = "submit";
@@ -3522,13 +3628,20 @@
       more.disabled = true;
       try {
         const params = new URLSearchParams({ q: query, type: filter.select.value, view });
-        if (append && next) params.set("before", next);
+        if (append && next) params.set(view === "users" ? "after" : "before", next);
         const data = await apiJson(`/api/${admin ? "admin" : "reviews"}?${params}`);
         if (!list.isConnected || generation !== request) return;
         if (!append) list.replaceChildren();
         if (view === "results") {
           for (const row of data.results) list.append(adminResultCard(row));
           $("#admin-overview").textContent = `共 ${data.summary.total} 份测评`;
+        } else if (view === "users") {
+          for (const member of data.users) {
+            const card = document.createElement("article");
+            card.className = "tree-card";
+            card.append(adminMemberControls(member, () => load(false)));
+            list.append(card);
+          }
         } else {
           for (const post of data.posts) {
             const item = postCard(post);
@@ -3543,7 +3656,22 @@
                   button.disabled = false;
                 }
               });
-              item.append(button);
+              const remove = textButton("删除发言", async () => {
+                if (!window.confirm("删除这条公开发言？")) return;
+                remove.disabled = true;
+                try {
+                  await apiJson("/api/admin", { ...post.target, action: "delete" });
+                  await load(false);
+                } catch (error) { showToast(error.message); remove.disabled = false; }
+              }, "text-button danger-text");
+              item.append(button, remove);
+              if (post.member) {
+                const member = document.createElement("details");
+                const title = document.createElement("summary");
+                title.textContent = `作者 ${post.member.nickname || "@" + post.member.username}`;
+                member.append(title, adminMemberControls(post.member, () => load(false)));
+                item.append(member);
+              }
               item.classList.toggle("is-moderated", post.moderated);
             }
             list.append(item);
@@ -3551,7 +3679,7 @@
         }
         next = data.next;
         more.hidden = !next;
-        status.textContent = list.children.length ? "" : view === "results" ? "暂无匹配的测评。" : "暂无匹配的发言。";
+        status.textContent = list.children.length ? "" : view === "results" ? "暂无匹配的测评。" : view === "users" ? "暂无匹配的用户。" : "暂无匹配的发言。";
       } catch (error) {
         if (generation === request) status.textContent = error.message || "暂时无法加载。";
       } finally {
@@ -3590,107 +3718,133 @@
   }
 
   function renderTreeHistory(container) {
-    const head = document.createElement("div");
-    head.className = "tree-section-head";
-    const title = document.createElement("div");
-    title.innerHTML = "<h2>历史档案</h2>";
-    head.append(title);
-    const actions = document.createElement("div");
-    actions.className = "tree-actions";
-    const exportButton = document.createElement("button");
-    exportButton.type = "button";
-    exportButton.className = "outline-button";
-    exportButton.textContent = "导出完整数据包 JSON";
-    exportButton.addEventListener("click", exportUserDataPackage);
-    const clearButton = document.createElement("button");
-    clearButton.type = "button";
-    clearButton.className = "text-button danger-text";
-    clearButton.textContent = "删除本机数据";
-    clearButton.addEventListener("click", clearLocalPersonalData);
-    actions.append(exportButton);
-    if (!state.account) actions.append(clearButton);
-    head.append(actions);
-    container.append(head);
-
-    const records = [
-      ...state.localRecords.map((record) => ({ record, legacy: false })),
-      ...state.legacyRecords.map((record) => ({ record, legacy: true }))
-    ].sort((a, b) => {
-      const aTime = a.record.submitted_at || a.record.createdAt || "";
-      const bTime = b.record.submitted_at || b.record.createdAt || "";
-      return String(bTime).localeCompare(String(aTime));
-    });
-
-    if (!records.length) {
-      const empty = document.createElement("div");
-      empty.className = "tree-empty";
-      empty.textContent = "暂无历史档案。";
-      container.append(empty);
+    container.append(titleElement("树洞发言历史"));
+    const posts = [
+      ...state.localRecords.filter((record) => record.publication?.published_at && !record.publication.deleted_at)
+        .map((record) => ({ type: "favorite", record, published_at: record.publication.published_at, works:
+          record.actual_favorites.map((favorite) => ({ external_ref: favorite.external_ref || manualRef(favorite.title_raw),
+            strength: favorite.like_strength, reasons: favorite.reasons, comment: favorite.reason_text })) })),
+      ...state.ratings.filter((record) => record.public_review && !record.publication?.deleted_at)
+        .map((record) => ({ type: "review", record, published_at: record.publication?.published_at || record.received_at,
+          works: [{ ...record }] }))
+    ].sort((a, b) => String(b.published_at).localeCompare(String(a.published_at)));
+    if (!posts.length) {
+      container.append(titleElement("暂无发言", "发布作品评价或完成一次测评后，发言会显示在这里。"));
       return;
     }
-
-    records.forEach(({ record, legacy }) => {
-      const details = document.createElement("details");
-      details.className = "history-item";
-      const summary = document.createElement("summary");
-      const left = document.createElement("div");
-      const firstTitle = record.actual_favorites?.[0]?.title_raw || record.actualFavorite?.title || "未填写真实作品";
-      const heading = document.createElement("strong");
-      heading.textContent = `${formatDate(record.submitted_at || record.createdAt)} · 《${firstTitle}》`;
-      const meta = document.createElement("span");
-      meta.textContent = `${legacy ? "旧版档案" : `v${record.schemaVersion || 4} · ${record.questionnaire_version || record.testVersion || "未标记"}`} · ${record.actual_favorites?.length ? `${record.actual_favorites.length} 部真实喜欢` : record.actualFavorite?.title ? "旧版单部本命" : "无真实作品字段"}`;
-      left.append(heading, meta);
-      const rawButton = document.createElement("span");
-      rawButton.className = "history-expand";
-      rawButton.textContent = "查看档案";
-      summary.append(left, rawButton);
-      const pre = document.createElement("pre");
-      pre.className = "history-json";
-      pre.textContent = JSON.stringify(record, null, 2);
-      details.append(summary);
-      const links = savedRecommendationLinks(record);
-      if (links) details.append(links);
-      const raw = document.createElement("details");
-      const rawTitle = document.createElement("summary");
-      rawTitle.textContent = "原始数据";
-      raw.append(rawTitle, pre);
-      details.append(raw);
-      if (!legacy) {
-        const actions = document.createElement("div");
-        actions.className = "tree-actions";
-        const edit = textButton("编辑本命番", () => editFavoritesFromRecord(record));
-        const remove = textButton("删除档案", async () => {
-          if (!window.confirm(record.publication ? "删除这份测评及对应的树洞发言？" : "删除这份测评档案？")) return;
-          remove.disabled = true;
-          try {
-            if (state.account) {
-              await apiJson("/api/responses", { action: "delete", account: true,
-                account_username: state.account.username, response_id: record.response_id });
-            }
-            state.localRecords = state.localRecords.filter((item) => item.response_id !== record.response_id);
-            state.accountReactions = state.accountReactions.filter((item) => item.responseId !== record.response_id);
-            saveLocalJson(RECORDS_KEY, state.localRecords);
-            if (state.record?.response_id === record.response_id) {
-              state.record = null;
-              state.result = null;
-              state.responseId = null;
-              state.editingResponseId = null;
-              state.feedback = {};
-              clearSession();
-            }
-            renderTree();
-            showToast("档案已删除。");
-          } catch (error) {
-            remove.disabled = false;
-            showToast(error.message);
+    for (const post of posts) {
+      const card = postCard(post);
+      const { record } = post;
+      if (record.publication?.moderated) card.append(titleElement("已被管理员隐藏"));
+      const actions = document.createElement("div");
+      actions.className = "tree-actions";
+      actions.append(textButton("编辑", () => {
+        if (post.type === "favorite") editFavoritesFromRecord(record);
+        else {
+          openTree("library");
+          openReviewEditor(record.external_ref, dom.treeContent, record);
+          state.treeSelectedWork.returnToHistory = true;
+        }
+      }, "text-button"));
+      const remove = textButton("删除发言", async () => {
+        if (!window.confirm("从树洞删除这条发言？")) return;
+        remove.disabled = true;
+        try {
+          const context = { account: true, account_username: state.account.username };
+          if (post.type === "favorite") {
+            const data = await apiJson("/api/responses", { ...context, action: "withdraw", response_id: record.response_id });
+            record.publication = data.publication;
+            if (state.record?.response_id === record.response_id) state.record.publication = data.publication;
+          } else {
+            await apiJson("/api/ratings", { ...context, action: "delete", id: record.id });
+            state.ratings = state.ratings.filter(({ id }) => id !== record.id);
           }
-        }, "text-button danger-text");
-        actions.append(edit, remove);
-        details.append(actions);
-      }
-      container.append(details);
-    });
+          if (state.screen === "tree" && state.treeTab === "history") renderTree();
+          showToast("发言已删除。");
+        } catch (error) {
+          showToast(error.message);
+          remove.disabled = false;
+        }
+      }, "text-button danger-text");
+      actions.append(remove);
+      card.append(actions);
+      container.append(card);
+    }
+  }
 
+  function applyPersonalAppearance() {
+    document.documentElement.dataset.accent = state.account?.accent || "jade";
+    document.documentElement.classList.toggle("compact-feed", state.account?.compact === true);
+  }
+
+  function renderPersonalSettings(container) {
+    const account = state.account;
+    const card = document.createElement("section");
+    card.className = "tree-card";
+    card.append(titleElement("个人设置", `账号 @${account.username} · ID ${account.id}`));
+    if (account.mutedUntil) card.append(titleElement(`禁言至 ${formatDate(account.mutedUntil)}`, account.moderationReason));
+
+    const form = document.createElement("form");
+    form.className = "tree-form";
+    const field = (label, element, value, limit) => {
+      const wrap = document.createElement("label");
+      wrap.textContent = label;
+      const control = document.createElement(element);
+      control.value = value;
+      control.maxLength = limit;
+      wrap.append(control);
+      form.append(wrap);
+      return control;
+    };
+    const nickname = field("昵称", "input", account.nickname || "", 24);
+    nickname.placeholder = `默认 @${account.username}`;
+    const bio = field("个人简介", "textarea", account.bio || "", 160);
+    bio.rows = 3;
+    const accent = labeledSelect("主题色", [
+      { code: "jade", label: "青绿" }, { code: "blue", label: "雾蓝" }, { code: "amber", label: "暖棕" }
+    ], account.accent);
+    const compactLabel = document.createElement("label");
+    compactLabel.className = "publish-option";
+    const compact = document.createElement("input");
+    compact.type = "checkbox";
+    compact.checked = account.compact;
+    compactLabel.append(compact, "紧凑显示树洞");
+    const actions = document.createElement("div");
+    actions.className = "tree-actions";
+    const save = document.createElement("button");
+    save.className = "primary-button";
+    save.textContent = "保存设置";
+    actions.append(save, textButton("退出登录", async () => {
+      try {
+        await apiJson("/api/account", { action: "logout" });
+        applyAccountData({ user: null });
+        showToast("已退出登录。");
+      } catch (error) { showToast(error.message); }
+    }, "text-button"));
+    const local = loadLocalJson(RECORDS_KEY, []);
+    if (Array.isArray(local) && local.some((record) => !state.localRecords.some((saved) => saved.response_id === record.response_id))) {
+      const importButton = textButton("导入本机旧测评", () => importLocalData(importButton, status));
+      actions.append(importButton);
+    }
+    const status = document.createElement("p");
+    status.className = "tree-copy";
+    status.setAttribute("role", "status");
+    form.append(accent.wrap, compactLabel, actions, status);
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      save.disabled = true;
+      try {
+        const data = await apiJson("/api/account", { action: "settings", account: true, account_username: account.username,
+          nickname: nickname.value, bio: bio.value, accent: accent.select.value, compact: compact.checked });
+        Object.assign(account, data.settings);
+        nickname.value = account.nickname;
+        applyPersonalAppearance();
+        status.textContent = "设置已保存。";
+      } catch (error) { status.textContent = error.message; }
+      finally { save.disabled = false; }
+    });
+    card.append(form);
+    container.append(card);
   }
 
   function savedRecommendationLinks(record) {
@@ -3711,13 +3865,12 @@
   }
 
   function renderTreeData(container) {
-    container.append(titleElement("数据与推荐说明"));
     const sections = [
       ["测评", "40 道题用于描述番剧审美。第 40 题的本命番与前面的审美选择共同决定核心推荐。性格自述在相似口味匹配中占较低权重。"],
-      ["社区加推", "开启相似口味推荐后，优先从相似用户共同选择的本命番中挑一部。样本不足时使用树洞好评。有合适的作品时才显示，推荐结果会保留作品链接。"],
-      ["作品索引", "作品搜索来自 Bangumi。核心推荐使用 AniList 和 MyAnimeList 的精选候选快照，封面来自 AniList。搜索结果按需查询，保存档案或评价时只保留相关作品的引用。"],
-      ["账号与树洞发言", "登录后发布的评价会匿名公开。一次测评会把第 40 题的本命番和喜欢理由发布为一条发言。前 39 题、画像和推荐结果保存在账号档案，可在历史中编辑本命番或删除整份测评。"],
-      ["数据使用", "相似口味推荐需要单独开启。管理员可查看测评结果、处理公开发言并导出汇总。账号菜单可导入旧测评档案，旧记录保留原有可见范围。"]
+      ["社区加推", "推荐会优先从相似用户共同选择的本命番中挑一部。样本不足时使用树洞好评。有合适的作品时才显示，推荐结果会保留作品链接。"],
+      ["作品索引", "作品搜索来自 Bangumi。核心推荐使用 AniList 和 MyAnimeList 的 150 部精选作品，封面来自 AniList。搜索结果按需查询，保存档案或评价时只保留相关作品的引用。"],
+      ["账号与树洞发言", "登录后发布的评价会匿名公开。一次测评会把第 40 题的本命番和喜欢理由发布为一条发言。十项标准维度和推荐结果保存在账号档案，可在个人中心编辑或撤下树洞发言。"],
+      ["数据使用", "新测评的标准维度用于相似口味匹配。管理员可查看测评结果、处理公开发言并导出汇总。个人设置可导入旧测评档案，旧记录保留原有可见范围。"]
     ];
     for (const [title, copy] of sections) {
       const card = document.createElement("section");
@@ -3726,70 +3879,6 @@
       container.append(card);
     }
   }
-
-  function buildUserDataPackage() {
-    return {
-      schema_version: 4,
-      questionnaire_version: QUESTIONNAIRE_VERSION,
-      exported_at: new Date().toISOString(),
-      field_notes: {
-        raw_answers: "问卷原始答案，不因派生画像覆盖。",
-        derived_profile: "可由原始答案重算的画像。",
-        anchors: "真实喜欢作品、评价与推荐反馈。",
-        legacy_records: "旧 v2/v3 档案，原样保存，不与 v4 字段混用。",
-        ratings: "本机评价记录。",
-        feedback: "本机推荐反馈。"
-      },
-      questionnaires: state.localRecords,
-      legacy_questionnaires: state.legacyRecords,
-      live_questionnaire: state.record,
-      ratings: state.ratings,
-      feedback: state.account ? state.accountReactions : state.feedback,
-      current_profile: state.result?.profile || state.record?.derived_profile || null,
-      current_recommendation_snapshot: state.record?.recommendation_snapshot || null,
-      draft_session: state.savedSession,
-      consents: state.consent
-    };
-  }
-
-  function exportUserDataPackage() {
-    const data = buildUserDataPackage();
-    const stamp = new Date().toISOString().slice(0, 10);
-    downloadBlob(JSON.stringify(data, null, 2), `anime-soul-me-${stamp}.json`, "application/json;charset=utf-8");
-    showToast("已导出个人数据包。");
-  }
-
-  function clearLocalPersonalData() {
-    if (!window.confirm("删除本机保存的问卷、评价和草稿？这个操作不能撤销；服务器上的匿名样本不会被删除。")) return;
-    try {
-      window.localStorage.removeItem(RECORDS_KEY);
-      window.localStorage.removeItem(RATINGS_KEY);
-      window.localStorage.removeItem(SESSION_KEY);
-      LEGACY_KEYS.forEach((key) => window.localStorage.removeItem(key));
-      window.sessionStorage.removeItem(ACTIVE_TAB_KEY);
-    } catch {
-      // Ignore.
-    }
-    state.localRecords = [];
-    state.legacyRecords = [];
-    state.ratings = [];
-    state.result = null;
-    state.record = null;
-    state.answers = {};
-    state.favorites = [emptyFavorite()];
-    state.feedback = {};
-    state.responseId = null;
-    state.saveMode = null;
-    state.savedSession = null;
-    state.consent = { profile_storage: true, similar_taste_anonymous_use: false };
-    dom.consentSimilar.checked = false;
-    renderTree();
-    showToast("本机数据已删除。");
-  }
-
-  /* ------------------------------------------------------------------ */
-  /* Admin data room                                                    */
-  /* ------------------------------------------------------------------ */
 
   async function detectServer() {
     if (!/^https?:$/.test(window.location.protocol)) return;
@@ -3854,7 +3943,13 @@
     if (changed) resetPersonalView();
     state.account = data.user;
     if (state.account) {
-      state.localRecords = data.questionnaires || [];
+      state.localRecords = (data.questionnaires || []).map((record) => {
+        if (record.analysis && record.answers) {
+          record.derived_profile = deriveProfile(record.answers, record.actual_favorites || []);
+          if (record.cleared_watch_need) record.derived_profile.context.current_watch_need = [];
+        }
+        return record;
+      });
       state.ratings = data.ratings || [];
       state.accountReactions = data.reactions || [];
       state.legacyRecords = [];
@@ -3864,20 +3959,10 @@
       state.savedSession = loadSavedSession();
       renderResumeCard(state.savedSession);
     }
-    $("#account-open").textContent = state.account ? "我的账号" : "登录";
+    $("#account-open").textContent = state.account ? "个人中心" : "登录";
+    applyPersonalAppearance();
     $("#admin-tab").hidden = state.account?.role !== "admin";
-    $("#account-admin").hidden = state.account?.role !== "admin";
-    refreshAccountDialog();
     if (state.screen === "tree") renderTree();
-  }
-
-  function refreshAccountDialog() {
-    $("#account-guest").hidden = Boolean(state.account);
-    $("#account-member").hidden = !state.account;
-    $("#account-name").textContent = state.account?.username || "";
-    const local = loadLocalJson(RECORDS_KEY, []);
-    $("#account-import").hidden = !Array.isArray(local) || !local.some((record) =>
-      !state.localRecords.some((saved) => saved.response_id === record.response_id));
   }
 
   function setAccountMode(mode) {
@@ -3891,8 +3976,7 @@
     $("#account-status").textContent = "";
   }
 
-  function openAccount({ message = "", admin = false } = {}) {
-    refreshAccountDialog();
+  function openAccount({ message = "" } = {}) {
     if (!dom.accountModal.open) {
       setAccountMode("login");
       const password = $("#account-password");
@@ -3900,10 +3984,6 @@
       $("#account-show-password").textContent = "显示";
       $("#account-show-password").setAttribute("aria-pressed", "false");
       dom.accountModal.showModal();
-    }
-    if (admin) {
-      $("#account-username").value = "admin";
-      $("#account-password").focus();
     }
     $("#account-status").textContent = state.accountsAvailable ? message : "当前环境未连接账号服务。";
   }
@@ -3930,7 +4010,7 @@
       } else if (resumeReview) {
         openTree("library");
         openReviewEditor(resumeReview.ref, dom.treeContent, null, resumeReview.draft);
-      } else if (data.user) openTree(data.user.role === "admin" ? "admin" : "profile");
+      } else if (data.user) openTree("profile");
       showToast(action === "logout" ? "已退出登录。" : "已登录。");
     } catch (error) {
       status.textContent = error.message;
@@ -3939,9 +4019,7 @@
     }
   }
 
-  async function importLocalData() {
-    const button = $("#account-import");
-    const status = $("#account-status");
+  async function importLocalData(button, status) {
     const records = loadLocalJson(RECORDS_KEY, []);
     const missing = (Array.isArray(records) ? records : []).filter((record) =>
       record.consent?.profile_storage && !state.localRecords.some(({ response_id }) => response_id === record.response_id));
@@ -3967,12 +4045,6 @@
     }
   }
 
-  function openAdminHome() {
-    if (state.account?.role === "admin") openTree("admin");
-    else if (state.account) showToast("请退出当前账号，再使用 admin 登录。");
-    else openAccount({ admin: true, message: "使用管理员密码登录管理主页。" });
-  }
-
   async function exportAdminData(format) {
     try {
       const response = await fetchWithTimeout(`/api/export?format=${format}`, { cache: "no-store" }, 15000);
@@ -3994,6 +4066,12 @@
 
   function bindEvents() {
     dom.startButton.addEventListener("click", startNewQuestionnaire);
+    $("#next-exploration").addEventListener("click", async (event) => {
+      const button = event.currentTarget;
+      button.disabled = true;
+      try { await recalculateRecommendations({ nextExplore: true }); }
+      finally { button.disabled = false; }
+    });
     $$("[data-go-home]").forEach((button) => button.addEventListener("click", handleGoHome));
     $$(".js-retake").forEach((button) => button.addEventListener("click", handleRetake));
     $$(".js-open-tree").forEach((button) => button.addEventListener("click", () => openTree()));
@@ -4011,10 +4089,6 @@
       renderFavoriteEntries();
       saveSession();
     });
-    dom.consentSimilar.addEventListener("change", () => {
-      state.consent.similar_taste_anonymous_use = dom.consentSimilar.checked;
-      saveSession();
-    });
     dom.treeBackButton.addEventListener("click", closeTree);
     $$("[data-tree-tab]").forEach((button) => {
       button.addEventListener("click", () => {
@@ -4024,11 +4098,6 @@
       });
     });
     document.addEventListener("keydown", handleKeydown);
-    dom.adminOpenButton.addEventListener("click", openAdminHome);
-    $("#account-admin").addEventListener("click", () => {
-      dom.accountModal.close();
-      openAdminHome();
-    });
     $$("[data-account-mode]").forEach((button) => button.addEventListener("click", () => setAccountMode(button.dataset.accountMode)));
     $("#account-show-password").addEventListener("click", (event) => {
       const password = $("#account-password");
@@ -4037,14 +4106,8 @@
       event.currentTarget.textContent = visible ? "隐藏" : "显示";
       event.currentTarget.setAttribute("aria-pressed", String(visible));
     });
-    $("#account-open").addEventListener("click", openAccount);
+    $("#account-open").addEventListener("click", () => state.account ? openTree("profile") : openAccount());
     $("#account-close").addEventListener("click", () => dom.accountModal.close());
-    $("#account-profile").addEventListener("click", () => {
-      dom.accountModal.close();
-      openTree("profile");
-    });
-    $("#account-import").addEventListener("click", importLocalData);
-    $("#account-logout").addEventListener("click", () => handleAccountAction("logout"));
     $("#account-form").addEventListener("submit", (event) => {
       event.preventDefault();
       const fields = Object.fromEntries(new FormData(event.currentTarget));
@@ -4074,7 +4137,6 @@
         if (data.user) {
           applyAccountData(data);
           state.sessionReady = true;
-          if (data.user.role === "admin") openTree("admin");
           return;
         }
       }

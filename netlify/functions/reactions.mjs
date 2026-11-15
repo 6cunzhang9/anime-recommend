@@ -1,3 +1,4 @@
+import { checkCanPublish } from "../shared/members.mjs";
 import { checkAccountContext, getUser, readJson, RequestError } from "../shared/auth.mjs";
 import { errorResponse, getRecord, getResponsesStore, jsonResponse, reactionKey } from "../shared/store.mjs";
 import { ValidationError, validateFeedback } from "../shared/validation.mjs";
@@ -28,6 +29,7 @@ export default async function handler(req) {
       await getResponsesStore().delete(reactionKey(payload.responseId, payload.animeId, user.id));
       return jsonResponse({ ok: true });
     }
+    if (user) await checkCanPublish(user);
     const feedback = validateFeedback(payload);
     const record = await getRecord(feedback.responseId, user?.id);
     if (!record) return errorResponse(404, "找不到对应的匿名问卷");

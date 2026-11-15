@@ -1,5 +1,7 @@
 "use strict";
 
+const standardTaste = require("./taste-analysis.js");
+const seriesCatalog = require("./series-data.js");
 const assessment = require("./test-data.js");
 
 const {
@@ -68,8 +70,11 @@ function validateExternalRef(input, required = false) {
   const title = cleanText(input.title_display || input.title_canonical, 160);
   if (required && (!provider || !title)) fail("作品引用不完整");
   let canonicalUrl = "";
+  if (provider === "series" && seriesCatalog.byId.has(providerId)) {
+    return seriesCatalog.reference(seriesCatalog.byId.get(providerId));
+  }
   const numericId = /^\d{1,12}$/.test(providerId);
-  if (provider === "bangumi" && numericId) canonicalUrl = `https://bgm.tv/subject/${providerId}`;
+  if (["bangumi", "bangumi-series"].includes(provider) && numericId) canonicalUrl = `https://bgm.tv/subject/${providerId}`;
   if (["anilist-candidate-snapshot", "anilist"].includes(provider) && numericId) {
     canonicalUrl = `https://anilist.co/anime/${providerId}`;
   }
@@ -340,12 +345,20 @@ function buildCommunity(records, ratings, request) {
   const requestCodes = new Set(["settings", "relationships", "themes", "drivers"].flatMap((key) =>
     Array.isArray(signals?.[key]) ? signals[key].filter((code) => typeof code === "string") : []));
   const actor = request?.accountOwner;
+  const axes = request?.dimensions;
+  const hasAxes = axes && Object.keys(standardTaste.AXES).every((key) =>
+    Number.isFinite(axes[key]) && axes[key] >= 0 && axes[key] <= 100);
   const neighbors = request?.consent_similar === true ? newestPerAccount(records)
-    .filter((record) => Number(record.schemaVersion) === 4 && record.consent?.similar_taste_anonymous_use === true && !record.publication?.moderated)
+    .filter((record) => Number(record.schemaVersion) === 4 && record.consent?.similar_taste_anonymous_use === true && !record.publication?.moderated && !record.publication?.deleted_at)
     .filter((record) => record.response_id !== request.response_id && (!actor || record.accountOwner !== actor))
     .map((record) => {
       const taste = jaccardSets(requestCodes, recordTasteCodes(record));
-      return { record, similarity: taste * 0.8 + personalityMatch(request.personality, record.answers) * 0.2 };
+      const personality = personalityMatch(request.personality, record.answers);
+      const dimensions = hasAxes ? standardTaste.affinity(axes, record.analysis?.dimensions ||
+        standardTaste.userDimensions(record.answers || {})) : 0;
+      const similarity = hasAxes && (taste > 0 || dimensions >= 0.87)
+        ? taste * 0.60 + personality * 0.12 + dimensions * 0.28 : taste * 0.8 + personality * 0.2;
+      return { record, similarity };
     })
     .filter(({ similarity }) => similarity >= 0.15)
     .sort((a, b) => b.similarity - a.similarity)
@@ -372,7 +385,7 @@ function buildCommunity(records, ratings, request) {
 
   const ratedWorks = new Map();
   for (const rating of ratings) {
-    if (rating.publication?.moderated) continue;
+    if (rating.publication?.moderated || rating.publication?.deleted_at) continue;
     const isPublic = Boolean(rating.accountOwner) && rating.public_review === true;
     if (!isPublic && rating.anonymous_use !== true) continue;
     if (actor && rating.accountOwner === actor) continue;

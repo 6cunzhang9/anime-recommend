@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import v4 from "../../v4-validation.js";
-import { getUser, keyPart, readJson, RequestError } from "../shared/auth.mjs";
+import { listMembers, setSanction } from "../shared/members.mjs";
+import { getUser, keyPart, readJson, RequestError, usernamePattern } from "../shared/auth.mjs";
 import { cursorPattern, pagePosts, readPostRecords } from "../shared/posts.mjs";
 import { changeEntry, packQuestionnaire, packRating, publicationFor } from "../shared/records.mjs";
 import { errorResponse, getRecord, getResponsesStore, jsonResponse, ratingKey, readAllRecords, responseKey } from "../shared/store.mjs";
@@ -39,18 +40,36 @@ export default async function handler(req) {
     if (user.role !== "admin") return errorResponse(403, "需要管理员权限");
 
     if (req.method === "POST") {
-      const { owner, id, type, moderated } = await readJson(req, 2048);
+      const { owner, id, type, moderated, action, days, username, reason } = await readJson(req, 2048);
+      if (action === "sanction") {
+        if (!isOwner(id) || typeof username !== "string" || !usernamePattern.test(username) ||
+          ![0, 1, 7, 30].includes(days) || (days && (typeof reason !== "string" || !reason.trim()))) {
+          return errorResponse(400, "请选择禁言期限并填写原因");
+        }
+        return jsonResponse({ ok: true, mutedUntil: await setSanction(id, username, days, reason || "") });
+      }
+      const deleting = action === "delete";
       if (!isOwner(owner) || typeof id !== "string" || !keyPart.test(id) ||
-        !["favorite", "review"].includes(type) || typeof moderated !== "boolean") {
+        !["favorite", "review"].includes(type) || (!deleting && typeof moderated !== "boolean")) {
         return errorResponse(400, "发言操作无效");
       }
       const favorite = type === "favorite";
       const key = favorite ? responseKey(id, owner) : ratingKey(id, owner);
       const pack = favorite ? packQuestionnaire : packRating;
-      const result = await changeEntry(getResponsesStore(), key, (record) => {
+      const store = getResponsesStore();
+      if (deleting && !favorite) {
+        const record = await store.get(key, { type: "json" });
+        if (!record || !publicationFor(record)) return errorResponse(404, "未找到对应发言");
+        await store.delete(key);
+        return jsonResponse({ ok: true });
+      }
+      const result = await changeEntry(store, key, (record) => {
         const publication = record && publicationFor(record);
-        if (!publication) return null;
-        return pack({ ...record, publication: { ...publication, moderated, moderated_at: new Date().toISOString() } });
+        if (!publication || publication.deleted_at) return null;
+        const stamp = new Date().toISOString();
+        return pack({ ...record, publication: {
+          ...publication, ...(deleting ? { deleted_at: stamp } : { moderated, moderated_at: stamp })
+        } });
       });
       if (result.conflict) return errorResponse(409, "发言已变更，请重试");
       if (!result.modified) return errorResponse(404, "未找到对应发言");
@@ -69,9 +88,20 @@ export default async function handler(req) {
     const cursor = params.get("before") || "";
     if (cursor && !cursorPattern.test(cursor)) return errorResponse(400, "分页标记无效");
     const query = v4.normalizeWorkTitle(params.get("q")?.slice(0, 120));
+    if (params.get("view") === "users") {
+      const members = (await listMembers()).filter((member) =>
+        [member.username, member.nickname, member.id].some((value) => v4.normalizeWorkTitle(value).includes(query)));
+      const after = params.get("after") || "";
+      const users = members.filter((member) => member.username > after).slice(0, 21);
+      return jsonResponse({ ok: true, users: users.slice(0, 20), next: users.length > 20 ? users[19].username : null });
+    }
     if (params.get("view") === "posts") {
       const type = ["review", "favorite"].includes(params.get("type")) ? params.get("type") : "";
-      return jsonResponse({ ok: true, ...pagePosts(await readPostRecords(type), { query, cursor, type, admin: true }) });
+      const page = pagePosts(await readPostRecords(type), { query, cursor, type, admin: true });
+      const members = new Map((await listMembers()).map((member) => [member.id, member]));
+      return jsonResponse({ ok: true, ...page, posts: page.posts.map((post) => ({
+        ...post, member: members.get(post.target.owner) || null
+      })) });
     }
     const records = await readAllRecords();
     return jsonResponse({ ok: true, summary: v4.summarize(records), ...resultRows(records, cursor, query) });

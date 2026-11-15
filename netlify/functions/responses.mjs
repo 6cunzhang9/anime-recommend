@@ -1,5 +1,8 @@
+import { checkCanPublish } from "../shared/members.mjs";
 import { checkAccountContext, getUser, keyPart, readJson, RequestError } from "../shared/auth.mjs";
 import { deleteResponse, errorResponse, getResponsesStore, jsonResponse, responseKey } from "../shared/store.mjs";
+import taste from "../../taste-analysis.js";
+import testData from "../../test-data.js";
 import v4 from "../../v4-validation.js";
 import { changeEntry, packQuestionnaire, publicationFor } from "../shared/records.mjs";
 import { ValidationError, validateQuestionnaire } from "../shared/validation.mjs";
@@ -32,6 +35,20 @@ export default async function handler(req) {
       return jsonResponse({ ok: true });
     }
 
+    if (payload.action === "withdraw") {
+      if (typeof payload.response_id !== "string" || !keyPart.test(payload.response_id)) {
+        return errorResponse(400, "测评编号无效");
+      }
+      const result = await changeEntry(getResponsesStore(), responseKey(payload.response_id, user.id), (record) => {
+        if (!record?.publication || record.publication.deleted_at) return null;
+        return packQuestionnaire({ ...record, publication: { ...record.publication, deleted_at: new Date().toISOString() } });
+      });
+      if (result.conflict) return errorResponse(409, "发言已变更，请重试");
+      if (!result.record) return errorResponse(404, "发言不存在");
+      return jsonResponse({ ok: true, publication: result.record.publication });
+    }
+
+    if (user) await checkCanPublish(user);
     const record = validateQuestionnaire(payload);
     if (!record.consent.profile_storage) return errorResponse(400, "需要保存测评才能发布");
     const archive = payload.import_local === true;
@@ -47,8 +64,12 @@ export default async function handler(req) {
       const publication = publicationFor(previous || {}) || (!archive && !editing ? {
         published_at: record.received_at, moderated: false
       } : null);
+      const analysis = !archive ? taste.compile(record.answers, testData.QUESTIONS) : null;
       return packQuestionnaire({
         ...record,
+        ...(analysis && { analysis }),
+        consent: { ...record.consent, similar_taste_anonymous_use: previous
+          ? previous.consent?.similar_taste_anonymous_use === true : !archive || record.consent.similar_taste_anonymous_use },
         submitted_at: previous?.submitted_at || (archive ? record.submitted_at : record.received_at),
         ...(publication && { publication })
       });
