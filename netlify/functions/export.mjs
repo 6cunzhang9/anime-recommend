@@ -1,4 +1,11 @@
-import { checkAdmin, errorResponse, readAllRecords, recordsToCsv } from "../shared/store.mjs";
+import {
+  checkAdmin,
+  errorResponse,
+  joinFeedback,
+  readAllReactions,
+  readAllRecords,
+  recordsToCsv
+} from "../shared/store.mjs";
 
 export const config = {
   path: "/api/export",
@@ -23,28 +30,31 @@ export default async function handler(req) {
     }
 
     const records = await readAllRecords();
+    const reactions = await readAllReactions();
+    const joined = joinFeedback(records, reactions);
     const stamp = new Date().toISOString().slice(0, 10);
     let body;
     let contentType;
     let extension = format;
 
     if (format === "csv") {
-      body = recordsToCsv(records);
+      body = recordsToCsv(joined);
       contentType = "text/csv; charset=utf-8";
     } else if (format === "json") {
       body = JSON.stringify(
         {
           exportedAt: new Date().toISOString(),
-          schemaVersion: 2,
-          count: records.length,
-          responses: records
+          schemaVersion: 3,
+          count: joined.length,
+          responses: joined,
+          reactions
         },
         null,
         2
       );
       contentType = "application/json; charset=utf-8";
     } else {
-      body = records.map((record) => JSON.stringify(record)).join("\n");
+      body = joined.map((record) => JSON.stringify(record)).join("\n");
       if (body) body += "\n";
       contentType = "application/x-ndjson; charset=utf-8";
       extension = "jsonl";

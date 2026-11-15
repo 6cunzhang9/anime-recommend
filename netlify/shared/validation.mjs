@@ -61,17 +61,35 @@ function validateAnswers(inputAnswers) {
     const id = cleanText(answer.id, 20);
     if (!QUESTION_BY_ID.has(id)) fail("题目编号不正确");
     if (byId.has(id)) fail("题目编号重复");
-    const value = integerInRange(answer.value, 1, 5, "选项值必须为 1–5");
-    byId.set(id, value);
+    byId.set(id, answer.value);
   }
   if (byId.size !== QUESTIONS.length) fail("答案必须覆盖全部题目");
 
   return QUESTIONS.map((question) => {
-    const value = byId.get(question.id);
+    const rawValue = byId.get(question.id);
+    let value;
+    if (question.section === "scenario") {
+      const allowed = new Set(question.options.map((option) => option.key));
+      if (question.responseType === "multi") {
+        if (!Array.isArray(rawValue) || rawValue.length !== question.selectionCount) {
+          fail(`多选题「${question.itemKey}」需要选择 ${question.selectionCount} 项`);
+        }
+        value = [...new Set(rawValue.map((key) => cleanText(key, 40)))];
+        if (value.length !== question.selectionCount || value.some((key) => !allowed.has(key))) {
+          fail("多选题选项不正确");
+        }
+      } else {
+        value = cleanText(rawValue, 40);
+        if (!allowed.has(value)) fail("情境题选项不正确");
+      }
+    } else {
+      value = integerInRange(rawValue, 1, 5, "选项值必须为 1–5");
+    }
     return {
       id: question.id,
       itemKey: question.itemKey,
       section: question.section,
+      responseType: question.responseType,
       trait: question.trait || null,
       feature: question.feature || null,
       habit: question.habit || null,
@@ -106,7 +124,42 @@ function deriveScores(answers) {
     habits[key] = answer ? answer.value : 3;
   });
 
-  return { bigFive, preferences, habits };
+  const scenarioSignals = Object.fromEntries(FEATURE_KEYS.map((key) => [key, 0]));
+  answers
+    .filter((answer) => answer.section === "scenario")
+    .forEach((answer) => {
+      const question = QUESTION_BY_ID.get(answer.id);
+      const selectedKeys = Array.isArray(answer.value) ? answer.value : [answer.value];
+      (question?.options || []).forEach((option) => {
+        if (!selectedKeys.includes(option.key)) return;
+        Object.entries(option.weights || {}).forEach(([feature, weight]) => {
+          if (scenarioSignals[feature] === undefined) return;
+          scenarioSignals[feature] += Number(weight) || 0;
+        });
+      });
+    });
+  Object.keys(scenarioSignals).forEach((key) => {
+    scenarioSignals[key] = Number(scenarioSignals[key].toFixed(3));
+  });
+
+  return { bigFive, preferences, habits, scenarioSignals };
+}
+
+function deriveScenarioAnswers(answers) {
+  return answers
+    .filter((answer) => answer.section === "scenario")
+    .map((answer) => {
+      const question = QUESTION_BY_ID.get(answer.id);
+      const selectedKeys = Array.isArray(answer.value) ? answer.value : [answer.value];
+      const selectedOptions = (question?.options || []).filter((option) => selectedKeys.includes(option.key));
+      return {
+        id: answer.id,
+        itemKey: answer.itemKey,
+        type: answer.responseType,
+        selected: selectedKeys,
+        selectedTitles: selectedOptions.map((option) => option.title)
+      };
+    });
 }
 
 function deriveArchetype(bigFive) {
@@ -167,6 +220,7 @@ function validateRecommendations(recommendations) {
     const title = cleanText(item.title, 100);
     const animeId = cleanText(item.animeId, 100);
     if (!title || !animeId) fail("推荐作品缺少标识");
+    if (!/^[A-Za-z0-9_-]{1,100}$/.test(animeId)) fail("推荐作品标识格式不正确");
     const components = item.components && typeof item.components === "object" ? item.components : {};
     return {
       rank: index + 1,
@@ -188,7 +242,7 @@ function validateRecommendations(recommendations) {
 
 export function validateRecord(payload) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) fail("样本格式不正确");
-  if (payload.schemaVersion !== 2) fail("不支持的样本版本");
+  if (payload.schemaVersion !== 3) fail("不支持的样本版本");
   if (payload.consent !== true) fail("未获得匿名保存授权");
 
   const id = cleanText(payload.id, 100);
@@ -228,7 +282,7 @@ export function validateRecord(payload) {
     : [];
 
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     testVersion: cleanText(payload.testVersion, 20) || "unknown",
     algorithmVersion: cleanText(payload.algorithmVersion, 40) || "unknown",
     catalogVersion: cleanText(payload.catalogVersion, 40) || "unknown",
@@ -238,6 +292,7 @@ export function validateRecord(payload) {
     locale: cleanText(payload.locale, 20) || null,
     answers,
     scores,
+    scenarioAnswers: deriveScenarioAnswers(answers),
     archetype,
     quality,
     recommendations: validateRecommendations(payload.recommendations),
@@ -253,6 +308,31 @@ export function validateRecord(payload) {
     responseTimesMs,
     consent: true,
     source: "netlify"
+  };
+}
+
+const REACTION_VALUES = new Set(["like", "neutral", "dislike", "unseen"]);
+
+export function validateReaction(payload) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) fail("反馈格式不正确");
+  if (payload.schemaVersion !== 3) fail("不支持的反馈版本");
+  const responseId = cleanText(payload.responseId, 100);
+  if (!/^[A-Za-z0-9_-]{6,100}$/.test(responseId)) fail("反馈对应的样本 ID 不正确");
+  const animeId = cleanText(payload.animeId, 100);
+  if (!animeId) fail("缺少番剧标识");
+  const reaction = cleanText(payload.reaction, 20);
+  if (!REACTION_VALUES.has(reaction)) fail("反馈选项不正确");
+  const createdAtCandidate = cleanText(payload.createdAt, 40);
+  const createdAt = Number.isNaN(Date.parse(createdAtCandidate))
+    ? new Date().toISOString()
+    : new Date(createdAtCandidate).toISOString();
+  return {
+    schemaVersion: 3,
+    responseId,
+    animeId,
+    reaction,
+    createdAt,
+    receivedAt: new Date().toISOString()
   };
 }
 

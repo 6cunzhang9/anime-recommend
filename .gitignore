@@ -16,5 +16,6 @@ Thumbs.db
 # Local catalog rebuild cache / browser test artifacts
 scripts/catalog-cache.json
 .edge-test*/
+.edge-*/
 dist/
 .netlify/

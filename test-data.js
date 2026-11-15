@@ -1,11 +1,11 @@
-/* 本命番鉴定所 · 测评结构
+/* 本命番推荐所 · 测评结构
  *
  * 人格部分参考公开领域 IPIP / Big Five 的测量思路：每个特质 4 题、正反向作答。
  * 中文条目为本项目自译改写，并非标准化临床量表。
  * 内容偏好和观看习惯是显式偏好信号，用来避免“只看性格推番”。
  */
 
-const TEST_VERSION = "2.0.0";
+const TEST_VERSION = "3.0.0";
 
 const SCALE_CONFIG = {
   agree: {
@@ -247,6 +247,120 @@ const HABIT_ITEMS = [
   { key: "habit-pace", habit: "pace", text: "比起慢热铺陈，我更喜欢节奏快、每集都有推进的作品。" }
 ];
 
+const SCENARIO_ITEMS = [
+  {
+    key: "scenario-rain",
+    type: "binary",
+    text: "一个下雨的周末，你只想点开一集番。此刻更想进入哪个世界？",
+    instruction: "选更接近第一反应的一项，不需要权衡太久。",
+    options: [
+      {
+        key: "calm",
+        title: "安静温柔的日常",
+        desc: "热茶、慢对话，什么都不用急着发生。",
+        weights: { healing: 1, romance: 0.35, comedy: 0.2 }
+      },
+      {
+        key: "tense",
+        title: "紧张刺激的谜局",
+        desc: "开场就有谜题、危险和反转。",
+        weights: { mystery: 1, dark: 0.4, action: 0.25 }
+      }
+    ]
+  },
+  {
+    key: "scenario-two-things",
+    type: "multi",
+    selectionCount: 2,
+    text: "如果今晚只能同时拥有两种观感，你会选哪两个？",
+    instruction: "请选择恰好两项。",
+    options: [
+      {
+        key: "ensemble",
+        title: "群像羁绊",
+        desc: "几个人一起走一段路，关系慢慢长出来。",
+        weights: { sports: 0.35, comedy: 0.4, romance: 0.3, healing: 0.3 }
+      },
+      {
+        key: "world",
+        title: "世界观探索",
+        desc: "陌生规则、新地图和可以沉进去的设定。",
+        weights: { fantasy: 0.8, scifi: 0.8 }
+      },
+      {
+        key: "emotion",
+        title: "情感余震",
+        desc: "看完之后还要缓很久的那种后劲。",
+        weights: { romance: 0.8, dark: 0.35, healing: 0.4 }
+      },
+      {
+        key: "puzzle",
+        title: "谜题反转",
+        desc: "信息差、推理和最后一刻翻盘的快感。",
+        weights: { mystery: 0.8, dark: 0.35 }
+      },
+      {
+        key: "adrenaline",
+        title: "动作爽感",
+        desc: "打斗、胜负和节奏直接拉满。",
+        weights: { action: 0.9, sports: 0.3 }
+      }
+    ]
+  },
+  {
+    key: "scenario-weekend",
+    type: "choice",
+    text: "一个完全空白的周末摆在面前，哪种故事最先吸引你？",
+    instruction: "只选一个最想立刻点开的。",
+    options: [
+      {
+        key: "fantasy",
+        title: "去一个不存在的世界",
+        desc: "先看地图、规则和世界观，再进入人物。",
+        weights: { fantasy: 1, scifi: 0.4 }
+      },
+      {
+        key: "familiar",
+        title: "回到熟悉的生活",
+        desc: "想看真实的人如何度过普通的一天。",
+        weights: { healing: 0.9, romance: 0.5, comedy: 0.2 }
+      },
+      {
+        key: "puzzle",
+        title: "解开一桩复杂的谜",
+        desc: "被一个问题钩住，跟着线索一路往下。",
+        weights: { mystery: 1, dark: 0.3 }
+      },
+      {
+        key: "together",
+        title: "和一群人热血一次",
+        desc: "看队伍磨合、训练和并肩冲刺。",
+        weights: { action: 0.8, sports: 0.7, comedy: 0.2 }
+      }
+    ]
+  },
+  {
+    key: "scenario-pace",
+    type: "binary",
+    text: "两部作品口碑都很高。你更愿意先试哪一部？",
+    instruction: "没有正确答案，选你今晚更愿意打开的。",
+    options: [
+      {
+        key: "slow",
+        title: "慢热，但后劲很长",
+        desc: "允许前几集铺陈，只要最后能留下些什么。",
+        weights: { healing: 0.45, mystery: 0.4, dark: 0.35, romance: 0.3 }
+      },
+      {
+        key: "fast",
+        title: "节奏快，每集都有推进",
+        desc: "最好开场就抓人，信息量持续在线。",
+        weights: { action: 0.8, mystery: 0.4, comedy: 0.4 }
+      }
+    ]
+  }
+];
+
 const ATTENTION_ITEMS = [
   {
     key: "attention-1",
@@ -280,17 +394,51 @@ function makeLikertItem(item, index, type) {
   };
 }
 
-/* 题目顺序：
- * 前 8 题人格 → 注意力检查 → 其余 12 题人格 → 9 题内容偏好 → 注意力检查 → 6 题观看习惯。
- * 注意力检查保持低显著度，但会在数据中明确标记。 */
+/* 题目顺序有意混合：
+ * 人格题 → 校验 → 人格题 → 场景二选一 → 人格题 → 场景多选 → 偏好
+ * → 三选一情景 → 偏好 → 快慢取舍 → 校验 → 观看习惯。
+ * 这样不会一路只有同一种 5 点量表，同时把耗时控制在 10 分钟内。
+ */
 const QUESTION_ORDER = [
   ...BIG_FIVE_ITEMS.slice(0, 8).map((item) => ({ type: "personality", item })),
   { type: "attention", item: ATTENTION_ITEMS[0] },
-  ...BIG_FIVE_ITEMS.slice(8).map((item) => ({ type: "personality", item })),
-  ...PREFERENCE_ITEMS.map((item) => ({ type: "preference", item })),
+  ...BIG_FIVE_ITEMS.slice(8, 14).map((item) => ({ type: "personality", item })),
+  { type: "scenario", item: SCENARIO_ITEMS[0] },
+  ...BIG_FIVE_ITEMS.slice(14).map((item) => ({ type: "personality", item })),
+  { type: "scenario", item: SCENARIO_ITEMS[1] },
+  ...PREFERENCE_ITEMS.slice(0, 5).map((item) => ({ type: "preference", item })),
+  { type: "scenario", item: SCENARIO_ITEMS[2] },
+  ...PREFERENCE_ITEMS.slice(5).map((item) => ({ type: "preference", item })),
+  { type: "scenario", item: SCENARIO_ITEMS[3] },
   { type: "attention", item: ATTENTION_ITEMS[1] },
   ...HABIT_ITEMS.map((item) => ({ type: "habit", item }))
 ];
+
+function makeScenarioItem(item, index) {
+  return {
+    id: `q-${String(index + 1).padStart(2, "0")}`,
+    index: index + 1,
+    section: "scenario",
+    responseType: item.type,
+    text: item.text,
+    instruction: item.instruction,
+    trait: null,
+    feature: null,
+    habit: null,
+    reverse: false,
+    attention: false,
+    attentionKey: null,
+    expected: null,
+    itemKey: item.key,
+    selectionCount: item.selectionCount || 1,
+    options: item.options.map((option) => ({
+      key: option.key,
+      title: option.title,
+      desc: option.desc,
+      weights: { ...option.weights }
+    }))
+  };
+}
 
 const QUESTIONS = QUESTION_ORDER.map((entry, index) => {
   if (entry.type === "attention") {
@@ -300,6 +448,7 @@ const QUESTIONS = QUESTION_ORDER.map((entry, index) => {
       section: "attention",
       responseType: "agree",
       text: entry.item.text,
+      instruction: "",
       trait: "A",
       feature: null,
       habit: null,
@@ -310,6 +459,7 @@ const QUESTIONS = QUESTION_ORDER.map((entry, index) => {
       itemKey: entry.item.key
     };
   }
+  if (entry.type === "scenario") return makeScenarioItem(entry.item, index);
   return makeLikertItem(entry.item, index, entry.type);
 });
 
@@ -387,6 +537,7 @@ if (typeof module !== "undefined" && module.exports) {
     FEATURE_MAP,
     HABITS,
     HABIT_MAP,
+    SCENARIO_ITEMS,
     QUESTIONS,
     ARCHETYPES,
     DATA_QUALITY,

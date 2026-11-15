@@ -9,7 +9,8 @@ const PUBLIC_FILES = [
   "styles.css",
   "app.js",
   "test-data.js",
-  "catalog.js"
+  "catalog.js",
+  "media-assets.js"
 ];
 
 async function main() {
@@ -19,6 +20,8 @@ async function main() {
   for (const filename of PUBLIC_FILES) {
     await fs.copyFile(path.join(ROOT, filename), path.join(DIST, filename));
   }
+
+  await fs.cp(path.join(ROOT, "assets"), path.join(DIST, "assets"), { recursive: true });
 
   await fs.writeFile(
     path.join(DIST, "robots.txt"),

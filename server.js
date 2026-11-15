@@ -16,6 +16,7 @@ try {
 const ROOT = __dirname;
 const DATA_DIR = path.join(ROOT, "data");
 const RESPONSES_FILE = path.join(DATA_DIR, "responses.jsonl");
+const REACTIONS_FILE = path.join(DATA_DIR, "reactions.jsonl");
 const PORT = Number(process.env.PORT) || 4173;
 const HOST = process.env.HOST || "127.0.0.1";
 const MAX_BODY_BYTES = 160 * 1024;
@@ -28,15 +29,17 @@ const STATIC_FILES = new Map([
   ["/styles.css", { file: "styles.css", type: "text/css; charset=utf-8" }],
   ["/app.js", { file: "app.js", type: "text/javascript; charset=utf-8" }],
   ["/test-data.js", { file: "test-data.js", type: "text/javascript; charset=utf-8" }],
-  ["/catalog.js", { file: "catalog.js", type: "text/javascript; charset=utf-8" }]
+  ["/catalog.js", { file: "catalog.js", type: "text/javascript; charset=utf-8" }],
+  ["/media-assets.js", { file: "media-assets.js", type: "text/javascript; charset=utf-8" }]
 ]);
 
 const BIG_FIVE_KEYS = ["O", "C", "E", "A", "N"];
 const FEATURE_KEYS = ["fantasy", "scifi", "healing", "action", "mystery", "romance", "dark", "comedy", "sports"];
 const HABIT_KEYS = ["escape", "meaning", "social", "visual", "music", "pace"];
-const SECTION_COUNTS = { personality: 20, preference: 9, habit: 6, attention: 2 };
+const SECTION_COUNTS = { personality: 20, preference: 9, habit: 6, scenario: 4, attention: 2 };
 const QUALITY_FLAGS = new Set(["attention", "straight_lining", "too_fast"]);
 const MATCH_STATUSES = new Set(["top1", "top3", "catalog", "none"]);
+const REACTION_VALUES = new Set(["like", "neutral", "dislike", "unseen"]);
 
 const securityHeaders = {
   "X-Content-Type-Options": "nosniff",
@@ -44,7 +47,7 @@ const securityHeaders = {
   "Referrer-Policy": "no-referrer",
   "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
   "Content-Security-Policy":
-    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; font-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://s4.anilist.co; connect-src 'self'; font-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
 };
 
 const rateBuckets = new Map();
@@ -181,7 +184,7 @@ function requireIntegerInRange(value, min, max, message) {
 const QUESTION_BY_ID = new Map(
   (ASSESSMENT && Array.isArray(ASSESSMENT.QUESTIONS) ? ASSESSMENT.QUESTIONS : []).map((question) => [question.id, question])
 );
-const EXPECTED_QUESTION_COUNT = QUESTION_BY_ID.size || 37;
+const EXPECTED_QUESTION_COUNT = QUESTION_BY_ID.size || 41;
 
 function validateAnswers(answers) {
   if (!Array.isArray(answers) || answers.length !== EXPECTED_QUESTION_COUNT) {
@@ -192,7 +195,7 @@ function validateAnswers(answers) {
   const allowedFeatures = new Set(FEATURE_KEYS);
   const allowedHabits = new Set(HABIT_KEYS);
   const seenIds = new Set();
-  const sectionCounts = { personality: 0, preference: 0, habit: 0, attention: 0 };
+  const sectionCounts = { personality: 0, preference: 0, habit: 0, scenario: 0, attention: 0 };
 
   const cleaned = answers.map((answer) => {
     if (!answer || typeof answer !== "object") throw new ApiError(400, "答案格式不正确");
@@ -204,32 +207,38 @@ function validateAnswers(answers) {
     const definition = QUESTION_BY_ID.get(id);
     let itemKey;
     let section;
+    let responseType;
     let trait;
     let feature;
     let habit;
     let expected;
     let attention;
     let reverse;
+    let options;
 
     if (definition) {
       itemKey = definition.itemKey;
       section = definition.section;
+      responseType = definition.responseType;
       trait = definition.trait || null;
       feature = definition.feature || null;
       habit = definition.habit || null;
       expected = definition.attention ? definition.expected : null;
       attention = Boolean(definition.attention);
       reverse = Boolean(definition.reverse);
+      options = Array.isArray(definition.options) ? definition.options : null;
     } else {
       // Fallback for an installation that starts the API without test-data.js.
       itemKey = cleanText(answer.itemKey, 40);
       section = cleanText(answer.section, 20);
+      responseType = cleanText(answer.responseType, 20) || "agree";
       trait = cleanOptionalString(answer.trait, 1);
       feature = cleanOptionalString(answer.feature, 20);
       habit = cleanOptionalString(answer.habit, 20);
       expected = answer.expected == null ? null : requireIntegerInRange(answer.expected, 1, 5, "注意力校验答案不正确");
       attention = Boolean(answer.attention);
       reverse = Boolean(answer.reverse);
+      options = null;
     }
 
     if (!Object.prototype.hasOwnProperty.call(SECTION_COUNTS, section)) {
@@ -240,11 +249,33 @@ function validateAnswers(answers) {
     if (feature !== null && !allowedFeatures.has(feature)) throw new ApiError(400, "内容偏好维度不正确");
     if (habit !== null && !allowedHabits.has(habit)) throw new ApiError(400, "观看习惯维度不正确");
 
-    const value = requireIntegerInRange(answer.value, 1, 5, "选项值必须为 1–5");
+    let value;
+    if (section === "scenario") {
+      const allowedOptionKeys = options ? new Set(options.map((option) => option.key)) : null;
+      if (responseType === "multi") {
+        if (!Array.isArray(answer.value)) throw new ApiError(400, "多选题答案格式不正确");
+        const selectionCount = definition?.selectionCount || answer.value.length;
+        if (answer.value.length !== selectionCount) throw new ApiError(400, "多选题选择数量不正确");
+        value = [...new Set(answer.value.map((key) => cleanText(key, 40)))];
+        if (value.length !== selectionCount) throw new ApiError(400, "多选题选项重复");
+        if (allowedOptionKeys && value.some((key) => !allowedOptionKeys.has(key))) {
+          throw new ApiError(400, "多选题选项不在题目定义中");
+        }
+        if (!value.length) throw new ApiError(400, "多选题没有选择");
+      } else {
+        value = cleanText(answer.value, 40);
+        if (!value) throw new ApiError(400, "情境题选项不能为空");
+        if (allowedOptionKeys && !allowedOptionKeys.has(value)) throw new ApiError(400, "情境题选项不在题目定义中");
+      }
+    } else {
+      value = requireIntegerInRange(answer.value, 1, 5, "选项值必须为 1–5");
+    }
+
     return {
       id,
       itemKey,
       section,
+      responseType,
       trait,
       feature,
       habit,
@@ -318,7 +349,40 @@ function deriveScores(answers) {
     const answer = answers.find((item) => item.section === "habit" && item.habit === habit.key);
     habits[habit.key] = answer ? answer.value : 3;
   });
-  return { bigFive, preferences, habits };
+  const scenarioSignals = {};
+  ASSESSMENT.FEATURES.forEach((feature) => { scenarioSignals[feature.key] = 0; });
+  answers.filter((answer) => answer.section === "scenario").forEach((answer) => {
+    const definition = QUESTION_BY_ID.get(answer.id);
+    const selectedKeys = Array.isArray(answer.value) ? answer.value : [answer.value];
+    (definition?.options || []).forEach((option) => {
+      if (!selectedKeys.includes(option.key)) return;
+      Object.entries(option.weights || {}).forEach(([feature, weight]) => {
+        if (scenarioSignals[feature] === undefined) return;
+        scenarioSignals[feature] += Number(weight) || 0;
+      });
+    });
+  });
+  Object.keys(scenarioSignals).forEach((key) => {
+    scenarioSignals[key] = Number(scenarioSignals[key].toFixed(3));
+  });
+  return { bigFive, preferences, habits, scenarioSignals };
+}
+
+function deriveScenarioAnswers(answers) {
+  return answers
+    .filter((answer) => answer.section === "scenario")
+    .map((answer) => {
+      const definition = QUESTION_BY_ID.get(answer.id);
+      const selectedKeys = Array.isArray(answer.value) ? answer.value : [answer.value];
+      const selectedOptions = (definition?.options || []).filter((option) => selectedKeys.includes(option.key));
+      return {
+        id: answer.id,
+        itemKey: answer.itemKey,
+        type: answer.responseType,
+        selected: selectedKeys,
+        selectedTitles: selectedOptions.map((option) => option.title)
+      };
+    });
 }
 
 function validateRecommendations(recommendations) {
@@ -330,6 +394,7 @@ function validateRecommendations(recommendations) {
     const title = cleanText(item.title, 100);
     const animeId = cleanText(item.animeId, 100);
     if (!title || !animeId) throw new ApiError(400, "推荐作品缺少标识");
+    if (!/^[A-Za-z0-9_-]{1,100}$/.test(animeId)) throw new ApiError(400, "推荐作品标识格式不正确");
     const components = item.components && typeof item.components === "object" ? item.components : {};
     return {
       rank: index + 1,
@@ -427,7 +492,7 @@ function validateRecord(payload) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
     throw new ApiError(400, "样本格式不正确");
   }
-  if (payload.schemaVersion !== 2) throw new ApiError(400, "不支持的样本版本");
+  if (payload.schemaVersion !== 3) throw new ApiError(400, "不支持的样本版本");
   if (payload.consent !== true) throw new ApiError(400, "未获得匿名保存授权");
 
   const id = cleanText(payload.id, 100);
@@ -460,7 +525,7 @@ function validateRecord(payload) {
   const predictedRankRaw = favorite.predictedRank;
   const predictedRank = predictedRankRaw == null ? null : asNumberInRange(predictedRankRaw, 1, 200);
   const responseTimesMs = Array.isArray(payload.responseTimesMs)
-    ? payload.responseTimesMs.slice(0, 37).map((value) => {
+    ? payload.responseTimesMs.slice(0, EXPECTED_QUESTION_COUNT).map((value) => {
         const number = Number(value);
         return Number.isFinite(number) && number >= 0 ? Math.round(number) : null;
       })
@@ -469,7 +534,7 @@ function validateRecord(payload) {
   const submittedScores = validateScores(payload.scores);
   const derivedScores = deriveScores(answers);
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     testVersion: cleanText(payload.testVersion, 20) || "unknown",
     algorithmVersion: cleanText(payload.algorithmVersion, 40) || "unknown",
     catalogVersion: cleanText(payload.catalogVersion, 40) || "unknown",
@@ -478,6 +543,7 @@ function validateRecord(payload) {
     locale: cleanText(payload.locale, 20) || null,
     answers,
     scores: derivedScores || submittedScores,
+    scenarioAnswers: deriveScenarioAnswers(answers),
     archetype,
     quality,
     recommendations: validateRecommendations(payload.recommendations),
@@ -502,6 +568,9 @@ async function ensureStore() {
   if (!existsSync(RESPONSES_FILE)) {
     await fs.writeFile(RESPONSES_FILE, "", "utf8");
   }
+  if (!existsSync(REACTIONS_FILE)) {
+    await fs.writeFile(REACTIONS_FILE, "", "utf8");
+  }
   const raw = await fs.readFile(RESPONSES_FILE, "utf8");
   knownIds = new Set();
   raw.split(/\r?\n/).forEach((line) => {
@@ -521,6 +590,29 @@ function appendRecord(record) {
     knownIds.add(record.id);
   });
   return writeQueue;
+}
+
+function appendReaction(reaction) {
+  writeQueue = writeQueue.then(async () => {
+    await fs.appendFile(REACTIONS_FILE, `${JSON.stringify(reaction)}\n`, "utf8");
+  });
+  return writeQueue;
+}
+
+async function readReactions(records) {
+  await ensureDataFile();
+  const raw = await fs.readFile(REACTIONS_FILE, "utf8");
+  const reactions = [];
+  raw.split(/\r?\n/).forEach((line) => {
+    if (!line.trim()) return;
+    try {
+      const reaction = JSON.parse(line);
+      if (reaction && typeof reaction === "object") reactions.push(reaction);
+    } catch {
+      // Skip malformed partial lines.
+    }
+  });
+  return reactions;
 }
 
 async function readRecords() {
@@ -544,6 +636,9 @@ async function ensureDataFile() {
   if (!existsSync(RESPONSES_FILE)) {
     await fs.writeFile(RESPONSES_FILE, "", "utf8");
   }
+  if (!existsSync(REACTIONS_FILE)) {
+    await fs.writeFile(REACTIONS_FILE, "", "utf8");
+  }
 }
 
 function csvEscape(value) {
@@ -552,63 +647,151 @@ function csvEscape(value) {
   return `"${text.replace(/"/g, '""')}"`;
 }
 
+function latestFeedbackByResponse(reactions) {
+  const map = new Map();
+  reactions.forEach((reaction) => {
+    const key = `${reaction.responseId}:${reaction.animeId}`;
+    const existing = map.get(key);
+    if (!existing || String(reaction.receivedAt || "") >= String(existing.receivedAt || "")) {
+      map.set(key, reaction);
+    }
+  });
+  return map;
+}
+
+function joinFeedback(records, reactions) {
+  const latest = latestFeedbackByResponse(reactions);
+  return records.map((record) => {
+    const feedback = (record.recommendations || [])
+      .map((recommendation) => {
+        const reaction = latest.get(`${record.id}:${recommendation.animeId}`);
+        if (!reaction) return null;
+        return {
+          animeId: recommendation.animeId,
+          reaction: reaction.reaction,
+          at: reaction.createdAt,
+          receivedAt: reaction.receivedAt
+        };
+      })
+      .filter(Boolean);
+    return { ...record, feedback };
+  });
+}
+
+function feedbackValue(record, animeId) {
+  const feedback = Array.isArray(record.feedback) ? record.feedback : [];
+  const item = feedback.filter((entry) => entry.animeId === animeId).at(-1);
+  return item ? item.reaction : "";
+}
+
 function recordsToCsv(records) {
   const headers = [
-    "receivedAt",
-    "createdAt",
     "id",
+    "created_at",
+    "received_at",
     "valid",
+    "quality_flags",
+    "duration_seconds",
+    "attention_passed",
     "archetype",
-    "bigFive",
-    "favoriteTitle",
-    "favoriteReason",
-    "matchStatus",
-    "predictedRank",
-    "matchedAnime",
-    "recommendations",
-    "preferences",
-    "habits",
-    "durationSeconds",
-    "qualityFlags",
-    "answersJson",
-    "scoresJson",
-    "testVersion",
-    "algorithmVersion",
-    "catalogVersion"
+    "archetype_key",
+    ...BIG_FIVE_KEYS.map((key) => `bigfive_${key}`),
+    ...FEATURE_KEYS.map((key) => `pref_${key}`),
+    ...HABIT_KEYS.map((key) => `habit_${key}`),
+    "favorite_title",
+    "favorite_reason",
+    "favorite_match_status",
+    "favorite_predicted_rank",
+    "favorite_matched_anime",
+    "rec1_anime_id",
+    "rec1_title",
+    "rec1_match",
+    "rec1_reaction",
+    "rec2_anime_id",
+    "rec2_title",
+    "rec2_match",
+    "rec2_reaction",
+    "rec3_anime_id",
+    "rec3_title",
+    "rec3_match",
+    "rec3_reaction",
+    "scenario_signals_json",
+    "scenario_answers_json",
+    "test_version",
+    "algorithm_version",
+    "catalog_version",
+    "answers_json"
   ];
 
   const rows = records.map((record) => {
     const favorite = record.actualFavorite || {};
+    const recommendations = [...(record.recommendations || [])].sort((a, b) => (a.rank || 0) - (b.rank || 0));
+    const recFields = [];
+    for (let index = 0; index < 3; index += 1) {
+      const recommendation = recommendations[index] || {};
+      recFields.push(
+        recommendation.animeId || "",
+        recommendation.title || "",
+        recommendation.matchPercent ?? "",
+        recommendation.animeId ? feedbackValue(record, recommendation.animeId) : ""
+      );
+    }
     return [
-      record.receivedAt,
-      record.createdAt,
       record.id,
+      record.createdAt,
+      record.receivedAt,
       record.quality?.valid,
+      (record.quality?.flags || []).join("|"),
+      record.quality?.durationSeconds,
+      record.quality?.attentionPassed,
       record.archetype?.name,
-      BIG_FIVE_KEYS.map((key) => `${key}:${record.scores?.bigFive?.[key] ?? ""}`).join("/"),
+      record.archetype?.key,
+      ...BIG_FIVE_KEYS.map((key) => record.scores?.bigFive?.[key] ?? ""),
+      ...FEATURE_KEYS.map((key) => record.scores?.preferences?.[key] ?? ""),
+      ...HABIT_KEYS.map((key) => record.scores?.habits?.[key] ?? ""),
       favorite.title,
       favorite.reason,
       favorite.matchStatus,
       favorite.predictedRank,
       favorite.matchedAnimeTitle,
-      (record.recommendations || []).map((item) => `${item.rank}:${item.title}`).join(" | "),
-      JSON.stringify(record.scores?.preferences || {}),
-      JSON.stringify(record.scores?.habits || {}),
-      record.quality?.durationSeconds,
-      (record.quality?.flags || []).join("|"),
-      JSON.stringify(record.answers || []),
-      JSON.stringify(record.scores || {}),
+      ...recFields,
+      JSON.stringify(record.scores?.scenarioSignals || {}),
+      JSON.stringify(record.scenarioAnswers || []),
       record.testVersion,
       record.algorithmVersion,
-      record.catalogVersion
-    ]
-      .map(csvEscape)
-      .join(",");
+      record.catalogVersion,
+      JSON.stringify(record.answers || [])
+    ].map(csvEscape).join(",");
   });
 
   return `\uFEFF${headers.map(csvEscape).join(",")}\r\n${rows.join("\r\n")}`;
 }
 
+function validateReaction(payload) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    throw new ApiError(400, "反馈格式不正确");
+  }
+  if (payload.schemaVersion !== 3) throw new ApiError(400, "不支持的反馈版本");
+  const responseId = cleanText(payload.responseId, 100);
+  if (!/^[A-Za-z0-9_-]{6,100}$/.test(responseId)) throw new ApiError(400, "反馈对应的样本 ID 不正确");
+  if (!knownIds.has(responseId)) throw new ApiError(404, "找不到对应的匿名样本");
+  const animeId = cleanText(payload.animeId, 100);
+  if (!animeId) throw new ApiError(400, "缺少番剧标识");
+  const reaction = cleanText(payload.reaction, 20);
+  if (!REACTION_VALUES.has(reaction)) throw new ApiError(400, "反馈选项不正确");
+  const createdAtCandidate = cleanText(payload.createdAt, 40);
+  const createdAt = Number.isNaN(Date.parse(createdAtCandidate))
+    ? new Date().toISOString()
+    : new Date(createdAtCandidate).toISOString();
+  return {
+    schemaVersion: 3,
+    responseId,
+    animeId,
+    reaction,
+    createdAt,
+    receivedAt: new Date().toISOString()
+  };
+}
 function summarize(records) {
   const validRecords = records.filter((record) => record.quality?.valid === true);
   const total = validRecords.length;
@@ -644,6 +827,33 @@ function summarize(records) {
 }
 
 async function serveStatic(req, res, pathname) {
+  const coverMatch = pathname.match(/^\/assets\/covers\/([A-Za-z0-9_-]+)\.(jpg|jpeg|png|webp)$/);
+  if (coverMatch) {
+    const filePath = path.join(ROOT, "assets", "covers", `${coverMatch[1]}.${coverMatch[2]}`);
+    const contentType = coverMatch[2] === "png"
+      ? "image/png"
+      : coverMatch[2] === "webp"
+        ? "image/webp"
+        : "image/jpeg";
+    try {
+      const stat = await fs.stat(filePath);
+      setHeaders(res, {
+        "Content-Type": contentType,
+        "Content-Length": stat.size,
+        "Cache-Control": "public, max-age=604800"
+      });
+      res.writeHead(200);
+      if (req.method === "HEAD") {
+        res.end();
+        return;
+      }
+      createReadStream(filePath).pipe(res);
+    } catch {
+      sendText(res, 404, "Not found");
+    }
+    return;
+  }
+
   const entry = STATIC_FILES.get(pathname);
   if (!entry) {
     sendText(res, 404, "Not found");
@@ -714,6 +924,28 @@ async function handleRequest(req, res) {
     return;
   }
 
+  if (pathname === "/api/reactions") {
+    if (req.method !== "POST") {
+      sendJson(res, 405, { ok: false, error: "Method not allowed" });
+      return;
+    }
+    const contentType = String(req.headers["content-type"] || "");
+    if (!contentType.includes("application/json")) {
+      sendJson(res, 415, { ok: false, error: "Content-Type must be application/json" });
+      return;
+    }
+    const ip = req.socket.remoteAddress || "local";
+    if (!allowPost(ip)) {
+      sendJson(res, 429, { ok: false, error: "请求过于频繁，请稍后再试" });
+      return;
+    }
+    const payload = await readJsonBody(req);
+    const reaction = validateReaction(payload);
+    await appendReaction(reaction);
+    sendJson(res, 201, { ok: true, receivedAt: reaction.receivedAt });
+    return;
+  }
+
   if (pathname === "/api/stats") {
     if (req.method !== "GET") {
       sendJson(res, 405, { ok: false, error: "Method not allowed" });
@@ -739,28 +971,31 @@ async function handleRequest(req, res) {
       return;
     }
     const records = await readRecords();
+    const reactions = await readReactions(records);
+    const joined = joinFeedback(records, reactions);
     const stamp = new Date().toISOString().slice(0, 10);
     let body;
     let contentType;
     let extension = format;
 
     if (format === "csv") {
-      body = recordsToCsv(records);
+      body = recordsToCsv(joined);
       contentType = "text/csv; charset=utf-8";
     } else if (format === "json") {
       body = JSON.stringify(
         {
           exportedAt: new Date().toISOString(),
-          schemaVersion: 2,
-          count: records.length,
-          responses: records
+          schemaVersion: 3,
+          count: joined.length,
+          responses: joined,
+          reactions
         },
         null,
         2
       );
       contentType = "application/json; charset=utf-8";
     } else {
-      body = records.map((record) => JSON.stringify(record)).join("\n");
+      body = joined.map((record) => JSON.stringify(record)).join("\n");
       if (body) body += "\n";
       contentType = "application/x-ndjson; charset=utf-8";
       extension = "jsonl";
@@ -802,7 +1037,7 @@ const server = http.createServer((req, res) => {
 async function start() {
   await ensureStore();
   server.listen(PORT, HOST, () => {
-    console.log(`本命番鉴定所 running at http://${HOST}:${PORT}`);
+    console.log(`本命番推荐所 running at http://${HOST}:${PORT}`);
     console.log(`Anonymous samples: ${RESPONSES_FILE}`);
   });
 }

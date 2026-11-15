@@ -4,6 +4,10 @@ import { getStore } from "@netlify/blobs";
 const STORE_NAME = process.env.BLOBS_STORE_NAME || "anime-soul-responses";
 const STORE_REGION = process.env.BLOBS_REGION || "ap-southeast-1";
 const KEY_PREFIX = "responses/";
+const REACTION_PREFIX = "reactions/";
+const FEATURE_KEYS = ["fantasy", "scifi", "healing", "action", "mystery", "romance", "dark", "comedy", "sports"];
+const HABIT_KEYS = ["escape", "meaning", "social", "visual", "music", "pace"];
+const BIG_FIVE_KEYS = ["O", "C", "E", "A", "N"];
 
 const SECURITY_HEADERS = {
   "X-Content-Type-Options": "nosniff",
@@ -38,6 +42,11 @@ export function responseKey(id) {
   return `${KEY_PREFIX}${id}.json`;
 }
 
+export async function getRecord(id) {
+  const store = getResponsesStore();
+  return store.get(responseKey(id), { type: "json", consistency: "strong" });
+}
+
 export async function readAllRecords() {
   const store = getResponsesStore();
   const { blobs } = await store.list({ prefix: KEY_PREFIX });
@@ -55,6 +64,56 @@ export async function readAllRecords() {
   }
 
   return records.sort((a, b) => String(a.receivedAt || "").localeCompare(String(b.receivedAt || "")));
+}
+
+export function reactionKey(responseId, animeId) {
+  return `${REACTION_PREFIX}${responseId}/${animeId}.json`;
+}
+
+export async function readAllReactions() {
+  const store = getResponsesStore();
+  const { blobs } = await store.list({ prefix: REACTION_PREFIX });
+  const reactions = [];
+  const batchSize = 25;
+
+  for (let index = 0; index < blobs.length; index += batchSize) {
+    const batch = blobs.slice(index, index + batchSize);
+    const values = await Promise.all(
+      batch.map((blob) => store.get(blob.key, { type: "json", consistency: "strong" }))
+    );
+    values.forEach((reaction) => {
+      if (reaction && typeof reaction === "object") reactions.push(reaction);
+    });
+  }
+
+  return reactions;
+}
+
+export function joinFeedback(records, reactions) {
+  const latest = new Map();
+  reactions.forEach((reaction) => {
+    const key = `${reaction.responseId}:${reaction.animeId}`;
+    const existing = latest.get(key);
+    if (!existing || String(reaction.receivedAt || "") >= String(existing.receivedAt || "")) {
+      latest.set(key, reaction);
+    }
+  });
+
+  return records.map((record) => {
+    const feedback = (record.recommendations || [])
+      .map((recommendation) => {
+        const reaction = latest.get(`${record.id}:${recommendation.animeId}`);
+        if (!reaction) return null;
+        return {
+          animeId: recommendation.animeId,
+          reaction: reaction.reaction,
+          at: reaction.createdAt,
+          receivedAt: reaction.receivedAt
+        };
+      })
+      .filter(Boolean);
+    return { ...record, feedback };
+  });
 }
 
 export function summarize(records) {
@@ -113,55 +172,89 @@ function csvEscape(value) {
   return `"${text.replace(/"/g, '""')}"`;
 }
 
+function feedbackValue(record, animeId) {
+  const feedback = Array.isArray(record.feedback) ? record.feedback : [];
+  const item = feedback.filter((entry) => entry.animeId === animeId).at(-1);
+  return item ? item.reaction : "";
+}
+
 export function recordsToCsv(records) {
   const headers = [
-    "receivedAt",
-    "createdAt",
     "id",
+    "created_at",
+    "received_at",
     "valid",
+    "quality_flags",
+    "duration_seconds",
+    "attention_passed",
     "archetype",
-    "bigFive",
-    "favoriteTitle",
-    "favoriteReason",
-    "matchStatus",
-    "predictedRank",
-    "matchedAnime",
-    "recommendations",
-    "preferences",
-    "habits",
-    "durationSeconds",
-    "qualityFlags",
-    "answersJson",
-    "scoresJson",
-    "testVersion",
-    "algorithmVersion",
-    "catalogVersion"
+    "archetype_key",
+    ...BIG_FIVE_KEYS.map((key) => `bigfive_${key}`),
+    ...FEATURE_KEYS.map((key) => `pref_${key}`),
+    ...HABIT_KEYS.map((key) => `habit_${key}`),
+    "favorite_title",
+    "favorite_reason",
+    "favorite_match_status",
+    "favorite_predicted_rank",
+    "favorite_matched_anime",
+    "rec1_anime_id",
+    "rec1_title",
+    "rec1_match",
+    "rec1_reaction",
+    "rec2_anime_id",
+    "rec2_title",
+    "rec2_match",
+    "rec2_reaction",
+    "rec3_anime_id",
+    "rec3_title",
+    "rec3_match",
+    "rec3_reaction",
+    "scenario_signals_json",
+    "scenario_answers_json",
+    "test_version",
+    "algorithm_version",
+    "catalog_version",
+    "answers_json"
   ];
 
   const rows = records.map((record) => {
     const favorite = record.actualFavorite || {};
+    const recommendations = [...(record.recommendations || [])].sort((a, b) => (a.rank || 0) - (b.rank || 0));
+    const recFields = [];
+    for (let index = 0; index < 3; index += 1) {
+      const recommendation = recommendations[index] || {};
+      recFields.push(
+        recommendation.animeId || "",
+        recommendation.title || "",
+        recommendation.matchPercent ?? "",
+        recommendation.animeId ? feedbackValue(record, recommendation.animeId) : ""
+      );
+    }
     return [
-      record.receivedAt,
-      record.createdAt,
       record.id,
+      record.createdAt,
+      record.receivedAt,
       record.quality?.valid,
+      (record.quality?.flags || []).join("|"),
+      record.quality?.durationSeconds,
+      record.quality?.attentionPassed,
       record.archetype?.name,
-      ["O", "C", "E", "A", "N"].map((key) => `${key}:${record.scores?.bigFive?.[key] ?? ""}`).join("/"),
+      record.archetype?.key,
+      ...BIG_FIVE_KEYS.map((key) => record.scores?.bigFive?.[key] ?? ""),
+      ...FEATURE_KEYS.map((key) => record.scores?.preferences?.[key] ?? ""),
+      ...HABIT_KEYS.map((key) => record.scores?.habits?.[key] ?? ""),
       favorite.title,
       favorite.reason,
       favorite.matchStatus,
       favorite.predictedRank,
       favorite.matchedAnimeTitle,
-      (record.recommendations || []).map((item) => `${item.rank}:${item.title}`).join(" | "),
-      JSON.stringify(record.scores?.preferences || {}),
-      JSON.stringify(record.scores?.habits || {}),
-      record.quality?.durationSeconds,
-      (record.quality?.flags || []).join("|"),
-      JSON.stringify(record.answers || []),
-      JSON.stringify(record.scores || {}),
+      ...recFields,
+      JSON.stringify(record.scores?.scenarioSignals || {}),
+      JSON.stringify(record.scenarioAnswers || []),
       record.testVersion,
       record.algorithmVersion,
-      record.catalogVersion
+      record.catalogVersion,
+      JSON.stringify(record.answers || [])
     ].map(csvEscape).join(",");
   });
 

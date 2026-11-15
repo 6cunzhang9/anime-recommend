@@ -1,12 +1,23 @@
-/* global TEST_VERSION, SCALE_CONFIG, TRAITS, TRAIT_MAP, FEATURES, FEATURE_MAP, HABITS, HABIT_MAP, QUESTIONS, ARCHETYPES, DATA_QUALITY, buildArchetypeKey, CATALOG_META, ANIME_CATALOG */
+/* global TEST_VERSION, SCALE_CONFIG, TRAITS, TRAIT_MAP, FEATURES, FEATURE_MAP, HABITS, HABIT_MAP, QUESTIONS, ARCHETYPES, DATA_QUALITY, buildArchetypeKey, CATALOG_META, ANIME_CATALOG, ANIME_MEDIA */
 
 (function () {
   "use strict";
 
-  const ALGORITHM_VERSION = "hybrid-fit-v2";
-  const STORAGE_KEY = "anime-soul-lab:responses:v2";
+  const ALGORITHM_VERSION = "hybrid-fit-v3";
+  const STORAGE_KEY = "anime-soul-lab:responses:v3";
+  const LEGACY_STORAGE_KEY = "anime-soul-lab:responses:v2";
+  const SESSION_KEY = "anime-soul-lab:session:v3";
+  const ACTIVE_TAB_KEY = "anime-soul-lab:active-tab";
   const ADMIN_TOKEN_STORAGE_KEY = "anime-soul-lab:admin-token";
   const MAX_LOCAL_RECORDS = 300;
+  const TOTAL_PROMPTS = QUESTIONS.length + 1;
+  const REACTIONS = [
+    { value: "like", label: "喜欢" },
+    { value: "neutral", label: "无感" },
+    { value: "dislike", label: "不喜欢" },
+    { value: "unseen", label: "未看过" }
+  ];
+  const pendingReactions = new Set();
   const RANK_LABELS = ["最值得先试", "同频备选", "另一条口味线"];
   const FEATURE_KEYS = FEATURES.map((feature) => feature.key);
 
@@ -143,25 +154,42 @@
     testStartedAt: null,
     testFinishedAt: null,
     lastAnswerAt: null,
-    responseTimes: new Array(QUESTIONS.length).fill(null)
+    responseTimes: new Array(QUESTIONS.length).fill(null),
+    responseRecord: null,
+    responseRecordId: null,
+    consent: true,
+    saveMode: null,
+    favoriteComparison: null,
+    reactions: {},
+    sessionReady: false,
+    restoringSession: false,
+    savedSession: null
   };
 
   const QUESTION_META = (() => {
-    let personality = 0;
-    let preference = 0;
-    let habit = 0;
+    const counters = { personality: 0, preference: 0, habit: 0, scenario: 0 };
+    const totals = {
+      personality: QUESTIONS.filter((question) => question.section === "personality").length,
+      preference: QUESTIONS.filter((question) => question.section === "preference").length,
+      habit: QUESTIONS.filter((question) => question.section === "habit").length,
+      scenario: QUESTIONS.filter((question) => question.section === "scenario").length
+    };
     return QUESTIONS.map((question) => {
       if (question.section === "personality") {
-        personality += 1;
-        return { label: `关于你 · ${personality} / 20`, type: "PERSONALITY" };
+        counters.personality += 1;
+        return { label: `关于你 · ${counters.personality} / ${totals.personality}`, type: "PERSONALITY" };
       }
       if (question.section === "preference") {
-        preference += 1;
-        return { label: `内容口味 · ${preference} / 9`, type: "CONTENT TASTE" };
+        counters.preference += 1;
+        return { label: `内容口味 · ${counters.preference} / ${totals.preference}`, type: "CONTENT TASTE" };
       }
       if (question.section === "habit") {
-        habit += 1;
-        return { label: `观看习惯 · ${habit} / 6`, type: "VIEWING HABIT" };
+        counters.habit += 1;
+        return { label: `观看习惯 · ${counters.habit} / ${totals.habit}`, type: "VIEWING HABIT" };
+      }
+      if (question.section === "scenario") {
+        counters.scenario += 1;
+        return { label: `生活情境 · ${counters.scenario} / ${totals.scenario}`, type: "SCENARIO" };
       }
       return { label: "关于你 · 补充确认", type: "CHECK" };
     });
@@ -174,10 +202,15 @@
     screens: {
       intro: $("#screen-intro"),
       test: $("#screen-test"),
+      favorite: $("#screen-favorite"),
       loading: $("#screen-loading"),
       result: $("#screen-result")
     },
     startButton: $("#start-btn"),
+    resumeCard: $("#resume-card"),
+    resumeTitle: $("#resume-title"),
+    resumeText: $("#resume-text"),
+    resumeButton: $("#resume-btn"),
     questionKind: $("#question-kind"),
     questionText: $("#question-text"),
     questionCounter: $("#question-counter"),
@@ -188,10 +221,10 @@
     progressTrack: $(".progress-track"),
     prevButton: $("#prev-btn"),
     testExitButton: $("#test-exit-btn"),
+    keyboardHint: $("#keyboard-hint"),
+    testProgressNote: $("#test-progress-note"),
     loadingTitle: $("#loading-title"),
     profileCard: $("#profile-card"),
-    bigfiveRadar: $("#bigfive-radar"),
-    typeEmoji: $("#type-emoji"),
     typeName: $("#type-name"),
     typeDescription: $("#type-description"),
     traitChips: $("#trait-chips"),
@@ -200,6 +233,7 @@
     habitSummary: $("#habit-summary"),
     recommendations: $("#recommendations"),
     recommendationReasons: $("#recommendation-reasons"),
+    favoriteBackButton: $("#favorite-back-btn"),
     favoriteForm: $("#favorite-form"),
     favoriteTitle: $("#favorite-title"),
     favoriteReason: $("#favorite-reason"),
@@ -207,12 +241,7 @@
     consentCheckbox: $("#consent-checkbox"),
     submitFavorite: $("#submit-favorite"),
     formError: $("#form-error"),
-    favoriteThanks: $("#favorite-thanks"),
-    thanksTitle: $("#thanks-title"),
-    thanksReason: $("#thanks-reason"),
-    thanksCompare: $("#thanks-compare"),
-    saveStatus: $("#save-status"),
-    saveStatusText: $("#save-status-text"),
+    resultSaveState: $("#result-save-state"),
     dataModal: $("#data-modal"),
     dataSource: $("#data-source"),
     dataQualitySummary: $("#data-quality-summary"),
@@ -296,8 +325,153 @@
       element.classList.toggle("is-active", screenName === name);
     });
     state.screen = name;
-    document.body.classList.toggle("is-focus-mode", name === "test" || name === "loading");
+    document.body.classList.toggle("is-focus-mode", name === "test" || name === "favorite" || name === "loading");
     scrollToTop();
+    if (state.sessionReady && !state.restoringSession && name !== "loading") {
+      saveSession();
+      try {
+        window.sessionStorage.setItem(ACTIVE_TAB_KEY, "1");
+      } catch {
+        // Ignore session storage restrictions.
+      }
+    }
+  }
+
+  function isAnswered(value, question) {
+    if (Array.isArray(value)) return value.length === (question?.selectionCount || 0);
+    return value !== null && value !== undefined && value !== "";
+  }
+
+  function buildSessionSnapshot() {
+    return {
+      version: 3,
+      savedAt: new Date().toISOString(),
+      screen: state.screen,
+      questionIndex: state.questionIndex,
+      answers: state.answers,
+      responseTimes: state.responseTimes,
+      testStartedAt: state.testStartedAt,
+      testFinishedAt: state.testFinishedAt,
+      lastAnswerAt: state.lastAnswerAt,
+      favoriteDraft: {
+        title: dom.favoriteTitle?.value || "",
+        reason: dom.favoriteReason?.value || "",
+        consent: dom.consentCheckbox ? dom.consentCheckbox.checked : true
+      },
+      result: state.result,
+      responseRecord: state.responseRecord,
+      responseRecordId: state.responseRecordId,
+      consent: state.consent,
+      saveMode: state.saveMode,
+      favoriteComparison: state.favoriteComparison,
+      reactions: state.reactions
+    };
+  }
+
+  function saveSession() {
+    if (state.restoringSession) return;
+    const hasProgress = state.answers.some((value, index) => isAnswered(value, QUESTIONS[index])) || state.result;
+    if (!hasProgress && state.screen === "intro") return;
+    try {
+      const snapshot = buildSessionSnapshot();
+      window.localStorage.setItem(SESSION_KEY, JSON.stringify(snapshot));
+      state.savedSession = snapshot;
+    } catch (error) {
+      console.warn("Could not save session:", error);
+    }
+  }
+
+  function clearSession() {
+    try {
+      window.localStorage.removeItem(SESSION_KEY);
+      window.sessionStorage.removeItem(ACTIVE_TAB_KEY);
+    } catch {
+      // Ignore storage restrictions.
+    }
+    state.savedSession = null;
+    if (dom.resumeCard) dom.resumeCard.hidden = true;
+  }
+
+  function sessionSummary(session) {
+    if (!session) return null;
+    if (session.result) {
+      return { title: "上次的推荐结果还在", text: "可以直接回到上次的结果，也可以重新开始。", action: "查看上次结果" };
+    }
+    if (session.screen === "favorite") {
+      return { title: "上次已经做到最后一步", text: "你的测试答案还在，可以继续填写本命。", action: "继续填写" };
+    }
+    const answered = (session.answers || []).filter((value, index) => isAnswered(value, QUESTIONS[index])).length;
+    if (answered > 0) {
+      return { title: "上次的测试没有做完", text: `已完成 ${answered} / ${QUESTIONS.length} 题，刷新或关闭页面都不会丢。`, action: "继续测试" };
+    }
+    return null;
+  }
+
+  function renderResumeCard(session) {
+    const summary = sessionSummary(session);
+    if (!summary || !dom.resumeCard) {
+      if (dom.resumeCard) dom.resumeCard.hidden = true;
+      return;
+    }
+    dom.resumeTitle.textContent = summary.title;
+    dom.resumeText.textContent = summary.text;
+    dom.resumeButton.textContent = summary.action;
+    dom.resumeCard.hidden = false;
+  }
+
+  function restoreSessionData(session) {
+    if (!session || session.version !== 3) return false;
+    state.restoringSession = true;
+    state.answers = Array.isArray(session.answers) && session.answers.length === QUESTIONS.length
+      ? session.answers
+      : new Array(QUESTIONS.length).fill(null);
+    state.responseTimes = Array.isArray(session.responseTimes) && session.responseTimes.length === QUESTIONS.length
+      ? session.responseTimes
+      : new Array(QUESTIONS.length).fill(null);
+    state.questionIndex = clamp(Number(session.questionIndex) || 0, 0, QUESTIONS.length - 1);
+    state.testStartedAt = session.testStartedAt || null;
+    state.testFinishedAt = session.testFinishedAt || null;
+    state.lastAnswerAt = session.lastAnswerAt || null;
+    state.result = session.result || null;
+    state.responseRecord = session.responseRecord || null;
+    state.responseRecordId = session.responseRecordId || null;
+    state.consent = session.consent !== false;
+    state.saveMode = session.saveMode || null;
+    state.favoriteComparison = session.favoriteComparison || null;
+    state.reactions = session.reactions && typeof session.reactions === "object" ? session.reactions : {};
+    state.submitted = Boolean(session.result);
+
+    if (dom.favoriteTitle) dom.favoriteTitle.value = session.favoriteDraft?.title || "";
+    if (dom.favoriteReason) dom.favoriteReason.value = session.favoriteDraft?.reason || "";
+    if (dom.consentCheckbox) dom.consentCheckbox.checked = session.favoriteDraft?.consent !== false;
+    updateReasonCount();
+
+    try {
+      window.sessionStorage.setItem(ACTIVE_TAB_KEY, "1");
+    } catch {
+      // Ignore session storage restrictions.
+    }
+
+    if (session.result) {
+      renderResult(session.result);
+      showScreen("result");
+    } else if (session.screen === "favorite" || state.answers.every((value, index) => isAnswered(value, QUESTIONS[index]))) {
+      showFinalStep();
+    } else if (session.screen === "test") {
+      showScreen("test");
+      renderQuestion({ announce: false });
+    } else {
+      showScreen("intro");
+    }
+    state.restoringSession = false;
+    state.sessionReady = true;
+    saveSession();
+    return true;
+  }
+
+  function resumeSavedSession() {
+    if (!state.savedSession) return;
+    restoreSessionData(state.savedSession);
   }
 
   /* ------------------------------------------------------------------
@@ -335,10 +509,37 @@
     dom.questionNumber.textContent = `QUESTION ${padNumber(state.questionIndex + 1)}`;
     dom.scaleInstruction.textContent = question.attention
       ? "请严格按题目文字选择，不需要揣测测试目的。"
-      : `${scale.title} ${scale.instruction}`;
+      : question.section === "scenario"
+        ? question.instruction
+        : `${scale.title} ${scale.instruction}`;
     dom.prevButton.disabled = state.questionIndex === 0;
     dom.options.replaceChildren();
+    dom.options.className = question.section === "scenario" ? "options-grid scenario-grid" : "options-grid scale-grid";
 
+    if (question.section === "scenario") {
+      renderScenarioOptions(question, selectedValue);
+      if (question.responseType === "multi") {
+        dom.keyboardHint.innerHTML = "按 <kbd>1</kbd> – <kbd>5</kbd> 选择，按 <kbd>Enter</kbd> 继续";
+        dom.testProgressNote.textContent = `选满 ${question.selectionCount} 项后点继续`;
+      } else {
+        dom.keyboardHint.innerHTML = `按 <kbd>1</kbd> – <kbd>${question.options.length}</kbd> 选择`;
+        dom.testProgressNote.textContent = "作答后自动进入下一题";
+      }
+    } else {
+      renderScaleOptions(question, scale, selectedValue);
+      dom.keyboardHint.innerHTML = "按 <kbd>1</kbd> – <kbd>5</kbd> 选择";
+      dom.testProgressNote.textContent = "作答后自动进入下一题";
+    }
+
+    updateProgress();
+    if (announce) {
+      window.requestAnimationFrame(() => {
+        dom.questionText.focus({ preventScroll: true });
+      });
+    }
+  }
+
+  function renderScaleOptions(question, scale, selectedValue) {
     scale.shortLabels.forEach((label, index) => {
       const value = index + 1;
       const button = document.createElement("button");
@@ -359,17 +560,71 @@
       button.addEventListener("click", () => selectAnswer(value));
       dom.options.append(button);
     });
+  }
 
-    updateProgress();
-    if (announce) {
-      window.requestAnimationFrame(() => {
-        dom.questionText.focus({ preventScroll: true });
+  function scenarioSelection(question) {
+    const value = state.answers[state.questionIndex];
+    if (question.responseType === "multi") return Array.isArray(value) ? value : [];
+    return typeof value === "string" ? [value] : [];
+  }
+
+  function renderScenarioOptions(question, selectedValue) {
+    const selected = scenarioSelection(question);
+    const letters = ["A", "B", "C", "D", "E"];
+
+    question.options.forEach((option, index) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "scenario-option";
+      button.dataset.option = option.key;
+      button.setAttribute("aria-pressed", selected.includes(option.key) ? "true" : "false");
+
+      const letter = document.createElement("span");
+      letter.className = "scenario-letter";
+      letter.textContent = letters[index];
+      const body = document.createElement("span");
+      body.className = "scenario-body";
+      const title = document.createElement("strong");
+      title.textContent = option.title;
+      const desc = document.createElement("small");
+      desc.textContent = option.desc;
+      body.append(title, desc);
+      button.append(letter, body);
+      if (selected.includes(option.key)) button.classList.add("is-selected");
+      button.addEventListener("click", () => {
+        if (question.responseType === "multi") toggleMultiOption(question, option.key);
+        else selectScenarioAnswer(option.key);
       });
+      dom.options.append(button);
+    });
+
+    if (question.responseType === "multi") {
+      const footer = document.createElement("div");
+      footer.className = "multi-footer";
+      const progress = document.createElement("span");
+      progress.className = "multi-progress";
+      progress.textContent = `已选 ${selected.length} / ${question.selectionCount}`;
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "primary-button multi-continue";
+      button.textContent = "继续";
+      button.disabled = selected.length !== question.selectionCount;
+      button.addEventListener("click", () => {
+        if (state.locked) return;
+        const current = scenarioSelection(question);
+        if (current.length === question.selectionCount) {
+          button.disabled = true;
+          advanceAfterAnswer();
+        }
+      });
+      footer.append(progress, button);
+      dom.options.append(footer);
     }
   }
 
   function updateProgress() {
-    const answeredCurrent = Boolean(state.answers[state.questionIndex]);
+    const question = QUESTIONS[state.questionIndex];
+    const answeredCurrent = isAnswered(state.answers[state.questionIndex], question);
     const percent = ((state.questionIndex + (answeredCurrent ? 1 : 0)) / QUESTIONS.length) * 100;
     dom.progressFill.style.width = `${percent}%`;
     dom.progressTrack.setAttribute("aria-valuemax", String(QUESTIONS.length));
@@ -380,26 +635,24 @@
     );
   }
 
-  function selectAnswer(value) {
-    if (state.locked || state.screen !== "test") return;
-    if (!Number.isInteger(value) || value < 1 || value > 5) return;
-
+  function markResponseTime() {
     const now = Date.now();
-    if (state.lastAnswerAt) {
-      state.responseTimes[state.questionIndex] = now - state.lastAnswerAt;
-    }
+    if (state.lastAnswerAt) state.responseTimes[state.questionIndex] = now - state.lastAnswerAt;
     state.lastAnswerAt = now;
-    state.answers[state.questionIndex] = value;
-    state.locked = true;
+  }
 
-    $$(".scale-option", dom.options).forEach((button) => {
-      const selected = button.dataset.value === String(value);
-      button.classList.toggle("is-selected", selected);
-      button.setAttribute("aria-pressed", selected ? "true" : "false");
+  function lockCurrentOptions() {
+    $$(".scale-option, .scenario-option", dom.options).forEach((button) => {
       button.disabled = true;
     });
-    updateProgress();
+  }
 
+  function advanceAfterAnswer() {
+    if (state.locked) return;
+    markResponseTime();
+    state.locked = true;
+    saveSession();
+    updateProgress();
     state.advanceTimer = window.setTimeout(() => {
       state.locked = false;
       if (state.questionIndex === QUESTIONS.length - 1) {
@@ -415,19 +668,77 @@
     }, 260);
   }
 
+  function selectAnswer(value) {
+    if (state.locked || state.screen !== "test") return;
+    if (!Number.isInteger(value) || value < 1 || value > 5) return;
+
+    state.answers[state.questionIndex] = value;
+    lockCurrentOptions();
+    $$(".scale-option", dom.options).forEach((button) => {
+      const selected = button.dataset.value === String(value);
+      button.classList.toggle("is-selected", selected);
+      button.setAttribute("aria-pressed", selected ? "true" : "false");
+    });
+    advanceAfterAnswer();
+  }
+
+  function selectScenarioAnswer(optionKey) {
+    if (state.locked || state.screen !== "test") return;
+    state.answers[state.questionIndex] = optionKey;
+    lockCurrentOptions();
+    $$(".scenario-option", dom.options).forEach((button) => {
+      const selected = button.dataset.option === optionKey;
+      button.classList.toggle("is-selected", selected);
+      button.setAttribute("aria-pressed", selected ? "true" : "false");
+    });
+    advanceAfterAnswer();
+  }
+
+  function toggleMultiOption(question, optionKey) {
+    if (state.locked || state.screen !== "test") return;
+    const current = scenarioSelection(question);
+    let next;
+    if (current.includes(optionKey)) {
+      next = current.filter((key) => key !== optionKey);
+    } else if (current.length < question.selectionCount) {
+      next = [...current, optionKey];
+    } else {
+      showToast(`这题只需要选择 ${question.selectionCount} 项，可以先取消一项。`);
+      return;
+    }
+    state.answers[state.questionIndex] = next;
+    $$(".scenario-option", dom.options).forEach((button) => {
+      const selected = next.includes(button.dataset.option);
+      button.classList.toggle("is-selected", selected);
+      button.setAttribute("aria-pressed", selected ? "true" : "false");
+    });
+    const progress = $(".multi-progress", dom.options);
+    const continueButton = $(".multi-continue", dom.options);
+    if (progress) progress.textContent = `已选 ${next.length} / ${question.selectionCount}`;
+    if (continueButton) continueButton.disabled = next.length !== question.selectionCount;
+    saveSession();
+    updateProgress();
+  }
+
   function startTest() {
     cleanupTimers();
     state.questionIndex = 0;
     state.answers = new Array(QUESTIONS.length).fill(null);
     state.responseTimes = new Array(QUESTIONS.length).fill(null);
     state.result = null;
+    state.responseRecord = null;
+    state.responseRecordId = null;
+    state.favoriteComparison = null;
+    state.reactions = {};
     state.submitted = false;
     state.locked = false;
+    state.saveMode = null;
     state.testStartedAt = Date.now();
     state.testFinishedAt = null;
     state.lastAnswerAt = state.testStartedAt;
     resetFavoriteForm();
     setSubmitButtonBusy(false);
+    state.sessionReady = true;
     showScreen("test");
     renderQuestion();
   }
@@ -436,49 +747,37 @@
     if (state.locked || state.screen !== "test" || state.questionIndex === 0) return;
     state.questionIndex -= 1;
     renderQuestion();
+    saveSession();
+  }
+
+  function showFinalStep() {
+    if (!state.answers.every((value, index) => isAnswered(value, QUESTIONS[index]))) {
+      showToast("还有题目没有完成，请再检查一下。");
+      return;
+    }
+    state.testFinishedAt = state.testFinishedAt || Date.now();
+    state.sessionReady = true;
+    dom.formError.hidden = true;
+    dom.favoriteTitle.removeAttribute("aria-invalid");
+    setSubmitButtonBusy(false);
+    showScreen("favorite");
   }
 
   function finishTest() {
-    if (state.answers.some((answer) => !answer)) {
+    if (!state.answers.every((value, index) => isAnswered(value, QUESTIONS[index]))) {
       showToast("还有题目没有完成，请再检查一下。");
       return;
     }
     state.testFinishedAt = Date.now();
-    showScreen("loading");
+    saveSession();
+    showFinalStep();
+  }
 
-    const loadingMessages = [
-      "正在读取你的全部回答",
-      "正在计算 Big Five 与口味信号",
-      "正在过滤口碑不足的作品",
-      "正在排队最值得先试的番"
-    ];
-    let messageIndex = 0;
-    dom.loadingTitle.textContent = loadingMessages[0];
-    state.loadingMessageTimer = window.setInterval(() => {
-      messageIndex = Math.min(messageIndex + 1, loadingMessages.length - 1);
-      dom.loadingTitle.textContent = loadingMessages[messageIndex];
-    }, 460);
-
-    state.loadingTimer = window.setTimeout(() => {
-      window.clearInterval(state.loadingMessageTimer);
-      state.loadingMessageTimer = null;
-      try {
-        const result = calculateResult();
-        state.result = result;
-        renderResult(result);
-        showScreen("result");
-        window.setTimeout(() => {
-          if (dom.resultHeading) {
-            dom.resultHeading.setAttribute("tabindex", "-1");
-            dom.resultHeading.focus({ preventScroll: true });
-          }
-        }, 80);
-      } catch (error) {
-        console.error(error);
-        showScreen("intro");
-        showToast("计算结果时出了点问题，请再试一次。");
-      }
-    }, 1900);
+  function backFromFavorite() {
+    if (state.screen !== "favorite") return;
+    state.questionIndex = QUESTIONS.length - 1;
+    showScreen("test");
+    renderQuestion();
   }
 
   function handleTestKeydown(event) {
@@ -486,6 +785,27 @@
     if (event.altKey || event.ctrlKey || event.metaKey) return;
     const tagName = event.target && event.target.tagName;
     if (tagName === "INPUT" || tagName === "TEXTAREA" || tagName === "SELECT") return;
+    const question = QUESTIONS[state.questionIndex];
+
+    if (question.section === "scenario") {
+      if (/^[1-5]$/.test(event.key)) {
+        const option = question.options[Number(event.key) - 1];
+        if (!option) return;
+        event.preventDefault();
+        if (question.responseType === "multi") toggleMultiOption(question, option.key);
+        else selectScenarioAnswer(option.key);
+      } else if (event.key === "Enter" && question.responseType === "multi") {
+        const current = scenarioSelection(question);
+        if (current.length === question.selectionCount) {
+          event.preventDefault();
+          advanceAfterAnswer();
+        }
+      } else if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        goToPreviousQuestion();
+      }
+      return;
+    }
 
     if (/^[1-5]$/.test(event.key)) {
       event.preventDefault();
@@ -509,8 +829,10 @@
 
   function calculateResult() {
     const answers = state.answers;
-    if (answers.some((answer) => !answer)) throw new Error("Incomplete answers");
+    if (answers.some((value, index) => !isAnswered(value, QUESTIONS[index]))) throw new Error("Incomplete answers");
 
+    const scenarioSignals = Object.fromEntries(FEATURE_KEYS.map((key) => [key, 0]));
+    const scenarioAnswers = [];
     const traitScores = {};
     const traitTotals = {};
     TRAITS.forEach((trait) => {
@@ -524,7 +846,8 @@
     const personalityResponses = [];
 
     QUESTIONS.forEach((question, index) => {
-      const value = Number(answers[index]);
+      const rawValue = answers[index];
+      const value = Number(rawValue);
       if (question.section === "personality") {
         const scored = question.reverse ? 6 - value : value;
         traitScores[question.trait] += scored;
@@ -542,6 +865,22 @@
         preferences[question.feature] = value;
       } else if (question.section === "habit") {
         habits[question.habit] = value;
+      } else if (question.section === "scenario") {
+        const selectedKeys = question.responseType === "multi" ? rawValue : [rawValue];
+        const selectedOptions = question.options.filter((option) => selectedKeys.includes(option.key));
+        selectedOptions.forEach((option) => {
+          Object.entries(option.weights || {}).forEach(([feature, weight]) => {
+            if (scenarioSignals[feature] === undefined) return;
+            scenarioSignals[feature] += Number(weight) || 0;
+          });
+        });
+        scenarioAnswers.push({
+          id: question.id,
+          itemKey: question.itemKey,
+          type: question.responseType,
+          selected: selectedKeys,
+          selectedTitles: selectedOptions.map((option) => option.title)
+        });
       }
     });
 
@@ -598,7 +937,16 @@
     const traitScoresByKey = Object.fromEntries(traits.map((trait) => [trait.key, trait.score]));
     const habitScoresByKey = Object.fromEntries(habitEntries.map((habit) => [habit.key, habit.value]));
     const affinity = buildPersonalityAffinity(traitScoresByKey);
-    const rating = rankCatalog({ preferences, habits, traitScores: traitScoresByKey, affinity });
+    const scenarioSignalSummary = Object.fromEntries(
+      Object.entries(scenarioSignals).map(([key, value]) => [key, Number(value.toFixed(3))])
+    );
+    const rating = rankCatalog({
+      preferences,
+      habits,
+      traitScores: traitScoresByKey,
+      affinity,
+      scenarioSignals: scenarioSignalSummary
+    });
     const top3 = rating.ranking.slice(0, 3).map((entry, index) => ({
       ...entry,
       rank: index + 1,
@@ -619,6 +967,8 @@
       archetype,
       quality,
       attentionChecks,
+      scenarioSignals: scenarioSignalSummary,
+      scenarioAnswers,
       affinity,
       ranking: rating.ranking,
       top3,
@@ -709,13 +1059,17 @@
     return clamp((community - 7.2) / 2.2, 0, 1);
   }
 
-  function rankCatalog({ preferences, habits, traitScores, affinity }) {
+  function rankCatalog({ preferences, habits, traitScores, affinity, scenarioSignals = {} }) {
     const eligibleCatalog = ANIME_CATALOG.filter((anime) => anime.quality?.eligible);
     const fallbackCatalog = ANIME_CATALOG.filter((anime) => !anime.quality?.eligible);
     const candidates = eligibleCatalog.length >= 3 ? eligibleCatalog : ANIME_CATALOG;
+    const effectivePreferences = Object.fromEntries(FEATURE_KEYS.map((key) => [
+      key,
+      clamp(Number(preferences[key] || 3) + Number(scenarioSignals[key] || 0) * 0.55, 1, 5)
+    ]));
 
     const ranking = candidates.map((anime) => {
-      const directTaste = directTasteScore(preferences, anime);
+      const directTaste = directTasteScore(effectivePreferences, anime);
       const personality = weightedAffinityScore(anime, affinity);
       const habit = habitScore(habits, anime);
       const quality = qualityScore(anime);
@@ -999,31 +1353,44 @@
     return `${anime.native || anime.romaji} · ${anime.year} · ${formatLabel}${episodeLabel}`;
   }
 
-  function createPoster(anime, index) {
-    const poster = document.createElement("div");
-    poster.className = "anime-poster";
-    poster.setAttribute("aria-hidden", "true");
-    poster.style.setProperty("--poster-a", anime.colors[0]);
-    poster.style.setProperty("--poster-b", anime.colors[1]);
-    poster.style.setProperty("--poster-c", anime.colors[2]);
+  function createCover(anime, index) {
+    const media = ANIME_MEDIA[anime.id] || {};
+    const cover = document.createElement("div");
+    cover.className = "rec-cover";
+    cover.style.setProperty("--cover-color", media.color || anime.colors?.[1] || "#e8ece8");
+
+    const fallback = document.createElement("div");
+    fallback.className = "cover-fallback";
+    const fallbackEmoji = document.createElement("span");
+    fallbackEmoji.textContent = anime.emoji || "◒";
+    const fallbackTitle = document.createElement("strong");
+    fallbackTitle.textContent = anime.title;
+    fallback.append(fallbackEmoji, fallbackTitle);
+
+    const image = document.createElement("img");
+    image.alt = `《${anime.title}》封面`;
+    image.loading = "lazy";
+    image.decoding = "async";
+    image.referrerPolicy = "no-referrer";
+    image.src = media.cover || "";
+    let triedRemote = false;
+    image.addEventListener("error", () => {
+      if (!triedRemote && media.remote && image.src !== media.remote) {
+        triedRemote = true;
+        image.src = media.remote;
+        return;
+      }
+      cover.classList.add("is-fallback");
+    });
+    image.addEventListener("load", () => {
+      cover.classList.add("is-loaded");
+    });
 
     const indexLabel = document.createElement("span");
-    indexLabel.className = "poster-index";
+    indexLabel.className = "cover-index";
     indexLabel.textContent = `NO.${padNumber(index + 1)}`;
-    const jp = document.createElement("span");
-    jp.className = "poster-jp";
-    jp.textContent = anime.native || anime.romaji;
-    const emoji = document.createElement("span");
-    emoji.className = "poster-emoji";
-    emoji.textContent = anime.emoji;
-    const posterTitle = document.createElement("p");
-    posterTitle.className = "poster-title";
-    posterTitle.textContent = anime.title;
-    const posterMeta = document.createElement("small");
-    posterMeta.textContent = `${anime.year} · ${anime.format === "MOVIE" ? "剧场版" : anime.format}`;
-    posterTitle.append(posterMeta);
-    poster.append(indexLabel, jp, emoji, posterTitle);
-    return poster;
+    cover.append(fallback, image, indexLabel);
+    return cover;
   }
 
   function createMatchWrap(entry, label = "综合匹配") {
@@ -1031,7 +1398,7 @@
     matchWrap.className = "match-wrap";
     const gauge = document.createElement("div");
     gauge.className = "match-gauge";
-    gauge.style.setProperty("--match", `${entry.matchPercent}%`);
+    gauge.style.setProperty("--match", String(entry.matchPercent));
     gauge.setAttribute("role", "img");
     gauge.setAttribute("aria-label", `${label} ${entry.matchPercent}%`);
     const gaugeInner = document.createElement("div");
@@ -1074,7 +1441,7 @@
         href: anime.anilistUrl || null,
         score: true
       },
-      { text: `MAL ${formatCount(anime.quality.malScoredBy)}人评分` },
+      { text: `${formatCount(anime.quality.malScoredBy)} 人评分` },
       { text: studioLabel(anime.studio) }
     ];
     scorePills.forEach((item) => {
@@ -1097,19 +1464,6 @@
     band.textContent = anime.quality.band;
     evidence.append(band);
     return evidence;
-  }
-
-  function createEssence(anime) {
-    const essence = document.createElement("p");
-    essence.className = "rec-essence";
-    const topFeature = FEATURE_KEYS
-      .map((key) => ({ ...FEATURE_MAP[key], value: anime.features[key] || 0 }))
-      .sort((a, b) => b.value - a.value)[0];
-    const featureEvidence = findFeatureTagEvidence(topFeature.key, anime.tags);
-    essence.textContent = featureEvidence.length
-      ? `它最鲜明的方向是「${featureEvidence.slice(0, 2).join("、")}」：${FEATURE_PITCH[topFeature.key]}。`
-      : `它在「${anime.tags.slice(0, 3).join("、")}」这些标签上最有辨识度，类型并不单一，适合先试一集再判断。`;
-    return essence;
   }
 
   function createBreakdown(entry) {
@@ -1140,19 +1494,64 @@
       row.append(name, track, score);
       components.append(row);
     });
-    const breakdownNote = document.createElement("p");
-    breakdownNote.className = "rec-component-note";
-    breakdownNote.textContent = "各项先归一化为 0–100 的匹配度，再按左列权重合成；不是直接相加的原始分数。";
-    breakdown.append(summary, components, breakdownNote);
+    const note = document.createElement("p");
+    note.className = "rec-component-note";
+    note.textContent = "各项先归一化为 0–100 的匹配度，再按权重合成；不是直接相加的原始分数。";
+    breakdown.append(summary, components, note);
     return breakdown;
+  }
+
+  function createFeedback(entry) {
+    const anime = entry.anime;
+    const wrap = document.createElement("div");
+    wrap.className = "rec-feedback";
+    const label = document.createElement("span");
+    label.className = "feedback-label";
+    label.textContent = "看完之后：";
+
+    const options = document.createElement("div");
+    options.className = "feedback-options";
+    options.setAttribute("role", "group");
+    options.setAttribute("aria-label", `你对《${anime.title}》的反馈`);
+
+    const status = document.createElement("span");
+    status.className = "feedback-status";
+    status.setAttribute("role", "status");
+    status.setAttribute("aria-live", "polite");
+
+    const buttons = REACTIONS.map((reaction) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = `feedback-button reaction-${reaction.value}`;
+      button.dataset.reaction = reaction.value;
+      button.textContent = reaction.label;
+      const existing = state.reactions[anime.id];
+      const selected = existing?.value === reaction.value;
+      button.classList.toggle("is-selected", selected);
+      button.setAttribute("aria-pressed", selected ? "true" : "false");
+      button.addEventListener("click", () => recordReaction(entry, reaction.value, buttons, status));
+      options.append(button);
+      return button;
+    });
+
+    const existing = state.reactions[anime.id];
+    if (existing?.value) {
+      status.textContent = existing.synced ? "已记录" : "已保存在本机";
+    } else {
+      status.textContent = "点击即记录，无需确认";
+    }
+
+    wrap.append(label, options, status);
+    return wrap;
   }
 
   function renderRecommendations(result) {
     dom.recommendations.replaceChildren();
     result.top3.forEach((entry, index) => {
       const anime = entry.anime;
+      const media = ANIME_MEDIA[anime.id] || {};
       const card = document.createElement("article");
-      card.className = `rec-card rec-summary-card${index === 0 ? " is-primary" : ""}`;
+      card.className = `rec-card${index === 0 ? " is-primary" : ""}`;
 
       const body = document.createElement("div");
       body.className = "rec-body";
@@ -1176,8 +1575,12 @@
       titleSub.textContent = formatTitleSub(anime);
       title.append(titleSub);
 
-      body.append(top, title, createEvidence(anime), createEssence(anime));
-      card.append(createPoster(anime, index), body);
+      const synopsis = document.createElement("p");
+      synopsis.className = "rec-synopsis";
+      synopsis.textContent = media.synopsis || "剧情简介整理中。";
+
+      body.append(top, title, createEvidence(anime), synopsis, createFeedback(entry));
+      card.append(createCover(anime, index), body);
       dom.recommendations.append(card);
     });
   }
@@ -1238,8 +1641,7 @@
 
   function renderResult(result) {
     const topTrait = result.traits[0];
-    dom.profileCard.style.setProperty("--profile-tone", topTrait.color);
-    dom.typeEmoji.textContent = result.archetype.emoji || "✦";
+    dom.profileCard.style.setProperty("--profile-tone", topTrait.color || "#1f7a4d");
     dom.typeName.textContent = result.archetype.name;
 
     const topFeatures = result.preferenceEntries.slice(0, 2);
@@ -1269,15 +1671,27 @@
       dom.traitChips.append(chip);
     });
 
-    renderRadar(canonicalTraits);
     renderBigFive(canonicalTraits);
     renderTaste(result);
     renderRecommendations(result);
     renderRecommendationReasons(result);
-    resetFavoriteForm();
-    setSubmitButtonBusy(false);
-    dom.favoriteThanks.hidden = true;
-    dom.favoriteForm.hidden = false;
+    renderResultSaveState();
+  }
+
+  function renderResultSaveState() {
+    if (!dom.resultSaveState) return;
+    const qualitySentence = buildQualitySentence(state.result?.quality);
+    const messages = {
+      server: "本命已经匿名保存，之后的推荐反馈会一并记录。",
+      local: "本命已保存在本机；当前未连接收集服务，推荐反馈也只会保存在本机。",
+      error: "本命已保存在本机，但同步到收集服务失败；推荐反馈会先留在本机。",
+      unsaved: "浏览器阻止了本地保存，且收集服务暂不可用。",
+      declined: "你选择了不保存本次数据；结果和反馈只保留在当前页面。"
+    };
+    const base = messages[state.saveMode] || "结果已生成。";
+    dom.resultSaveState.textContent = `${base}${qualitySentence && state.saveMode !== "declined" ? ` ${qualitySentence}` : ""}`;
+    dom.resultSaveState.classList.toggle("is-warning", ["error", "unsaved"].includes(state.saveMode));
+    dom.resultSaveState.hidden = false;
   }
 
   /* ------------------------------------------------------------------
@@ -1288,24 +1702,21 @@
     if (!dom.favoriteForm) return;
     dom.favoriteForm.reset();
     dom.favoriteForm.hidden = false;
-    dom.favoriteThanks.hidden = true;
     dom.formError.hidden = true;
     dom.formError.textContent = "";
     dom.favoriteTitle.removeAttribute("aria-invalid");
     dom.reasonCount.textContent = "0";
     dom.consentCheckbox.checked = true;
-    dom.saveStatus.classList.remove("is-local");
-    dom.saveStatusText.textContent = "正在保存…";
   }
 
   function setSubmitButtonBusy(isBusy) {
     if (!dom.submitFavorite) return;
     dom.submitFavorite.disabled = isBusy;
     if (isBusy) {
-      dom.submitFavorite.replaceChildren(document.createTextNode("正在收录…"));
+      dom.submitFavorite.replaceChildren(document.createTextNode("正在生成推荐…"));
     } else {
       const label = document.createElement("span");
-      label.textContent = "提交我的本命，继续浏览";
+      label.textContent = "提交本命，生成推荐";
       const arrow = document.createElement("span");
       arrow.setAttribute("aria-hidden", "true");
       arrow.textContent = "→";
@@ -1377,11 +1788,12 @@
     const scores = {
       bigFive: Object.fromEntries(result.traits.map((trait) => [trait.key, trait.score])),
       preferences: Object.fromEntries(FEATURES.map((feature) => [feature.key, result.preferences[feature.key] || 3])),
-      habits: { ...result.habits }
+      habits: { ...result.habits },
+      scenarioSignals: { ...result.scenarioSignals }
     };
 
     return {
-      schemaVersion: 2,
+      schemaVersion: 3,
       testVersion: TEST_VERSION,
       algorithmVersion: ALGORITHM_VERSION,
       catalogVersion: CATALOG_META.sourceSnapshotDate || CATALOG_META.generatedAt || "unknown",
@@ -1394,17 +1806,19 @@
           id: question.id,
           itemKey: question.itemKey,
           section: question.section,
-          trait: question.trait,
-          feature: question.feature,
-          habit: question.habit,
+          responseType: question.responseType,
+          trait: question.trait || null,
+          feature: question.feature || null,
+          habit: question.habit || null,
           value,
           reverse: question.reverse,
           attention: question.attention,
           expected: question.expected,
-          passed: question.attention ? value === question.expected : null
+          passed: question.attention ? Number(value) === question.expected : null
         };
       }),
       scores,
+      scenarioAnswers: result.scenarioAnswers,
       archetype: {
         key: result.archetypeKey,
         name: result.archetype.name
@@ -1422,6 +1836,7 @@
         components: entry.components,
         qualityScore: entry.anime.quality?.communityScore ?? null
       })),
+      feedback: [],
       actualFavorite: {
         title: rawTitle,
         reason,
@@ -1437,20 +1852,26 @@
   }
 
   function loadLocalRecords() {
-    try {
-      const raw = window.localStorage.getItem(STORAGE_KEY);
-      if (!raw) return [];
-      const parsed = JSON.parse(raw);
-      return Array.isArray(parsed) ? parsed.filter((record) => record && typeof record === "object") : [];
-    } catch (error) {
-      console.warn("Could not read local samples:", error);
-      return [];
-    }
+    const recordsById = new Map();
+    [LEGACY_STORAGE_KEY, STORAGE_KEY].forEach((key) => {
+      try {
+        const raw = window.localStorage.getItem(key);
+        if (!raw) return;
+        const parsed = JSON.parse(raw);
+        if (!Array.isArray(parsed)) return;
+        parsed.forEach((record) => {
+          if (!record || typeof record !== "object") return;
+          const recordId = record.id || `${key}:${recordsById.size}`;
+          recordsById.set(recordId, record);
+        });
+      } catch (error) {
+        console.warn(`Could not read local samples from ${key}:`, error);
+      }
+    });
+    return [...recordsById.values()];
   }
 
-  function saveLocalRecord(record) {
-    const records = loadLocalRecords();
-    records.push(record);
+  function persistLocalRecords(records) {
     const trimmed = records.slice(-MAX_LOCAL_RECORDS);
     try {
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(trimmed));
@@ -1460,6 +1881,30 @@
       console.warn("Could not save local sample:", error);
       return false;
     }
+  }
+
+  function saveLocalRecord(record) {
+    const records = loadLocalRecords();
+    const existingIndex = records.findIndex((item) => item.id === record.id);
+    if (existingIndex >= 0) records[existingIndex] = record;
+    else records.push(record);
+    return persistLocalRecords(records);
+  }
+
+  function updateLocalRecordFeedback(responseId, animeId, reaction, at) {
+    if (!responseId) return false;
+    const records = loadLocalRecords();
+    const record = records.find((item) => item.id === responseId);
+    if (!record) return false;
+    if (!Array.isArray(record.feedback)) record.feedback = [];
+    record.feedback = record.feedback.filter((item) => item.animeId !== animeId);
+    record.feedback.push({ animeId, reaction, at });
+    const saved = persistLocalRecords(records);
+    const current = state.responseRecord;
+    if (current && current.id === responseId) {
+      current.feedback = record.feedback;
+    }
+    return saved;
   }
 
   async function fetchWithTimeout(url, options = {}, timeoutMs = 5000) {
@@ -1487,10 +1932,39 @@
       try {
         const payload = await response.json();
         detail = payload && payload.error ? `：${payload.error}` : "";
-      } catch (error) {
+      } catch {
         // Ignore a non-JSON error body and use the status.
       }
       throw new Error(`Server returned ${response.status}${detail}`);
+    }
+    return response.json();
+  }
+
+  async function submitReactionToServer(responseId, animeId, reaction) {
+    const response = await fetchWithTimeout(
+      "/api/reactions",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          schemaVersion: 3,
+          responseId,
+          animeId,
+          reaction,
+          createdAt: new Date().toISOString()
+        })
+      },
+      5500
+    );
+    if (!response.ok) {
+      let detail = "";
+      try {
+        const payload = await response.json();
+        detail = payload && payload.error ? `：${payload.error}` : "";
+      } catch {
+        // Ignore a non-JSON error body.
+      }
+      throw new Error(`Reaction sync failed：${response.status}${detail}`);
     }
     return response.json();
   }
@@ -1502,92 +1976,146 @@
     return `本次作答被标记为低可信度样本（${labels.join("、")}）；数据仍会匿名保留，但不计入有效统计。`;
   }
 
-  function renderThanks(title, reason, comparison, saveMode) {
-    dom.favoriteForm.hidden = true;
-    dom.favoriteThanks.hidden = false;
-    dom.thanksTitle.textContent = `《${title}》`;
-    dom.thanksReason.textContent = reason;
-    dom.thanksReason.hidden = !reason;
-
-    let comparisonText = "";
-    if (comparison.matchStatus === "top1") {
-      comparisonText = "算法这次命中了——这正是它为你排在第 1 位的作品。看来这套混合信号比想象中更懂你。";
-    } else if (comparison.matchStatus === "top3") {
-      comparisonText = `它出现在推荐榜第 ${comparison.predictedRank} 位。算法猜对了方向，但还没有完全读懂你。`;
-    } else if (comparison.matchStatus === "catalog" && comparison.predictedRank) {
-      comparisonText = `它在全部可推荐候选中排第 ${comparison.predictedRank} 位，没有进入 Top 3。这次失手比命中更有研究价值。`;
-    } else if (comparison.matchStatus === "catalog") {
-      comparisonText = "它在候选番池里，但未通过当前的口碑门槛，所以没有进入推荐排序。这个反馈会被记录下来。";
-    } else {
-      comparisonText = "它不在当前的候选番池里。新的本命已经被记下，之后可以考虑把它加入坐标库。";
-    }
-    dom.thanksCompare.textContent = comparisonText;
-
-    const statusLabels = {
-      server: "已匿名写入样本池（服务端与本机各一份）。",
-      local: "已保存在本机浏览器。当前未连接收集服务，你可以在数据实验室导出样本。",
-      error: "已保存在本机，但同步到收集服务失败。数据没有丢，稍后可以导出。",
-      unsaved: "浏览器阻止了本地保存，且收集服务暂不可用，本次填写没有落库。",
-      declined: "你选择不保存本次填写，因此这份本命和理由不会被记录。"
-    };
-    const qualitySentence = saveMode === "declined" || saveMode === "unsaved"
-      ? ""
-      : buildQualitySentence(state.result?.quality);
-    dom.saveStatusText.textContent = `${statusLabels[saveMode] || statusLabels.local}${qualitySentence ? ` ${qualitySentence}` : ""}`;
-    dom.saveStatus.classList.toggle("is-local", saveMode !== "server");
-    dom.favoriteThanks.setAttribute("tabindex", "-1");
-    dom.favoriteThanks.focus({ preventScroll: true });
-  }
-
   async function handleFavoriteSubmit(event) {
     event.preventDefault();
-    if (!state.result) return;
+    if (state.screen !== "favorite") return;
 
     const title = dom.favoriteTitle.value.trim();
     const reason = dom.favoriteReason.value.trim();
     const consent = dom.consentCheckbox.checked;
 
     if (!title) {
-      showFormError("写下一部你真正喜欢的番，才能完成这份本命档案。");
+      showFormError("写下一部你真正喜欢的番，才能继续生成推荐。");
       return;
     }
 
     dom.formError.hidden = true;
     dom.favoriteTitle.removeAttribute("aria-invalid");
     setSubmitButtonBusy(true);
+    state.consent = consent;
+    state.testFinishedAt = state.testFinishedAt || Date.now();
 
-    const comparison = compareFavorite(title);
-    const record = buildRecord(title, reason, consent, comparison);
-    state.submitted = true;
-    let saveMode = "declined";
+    const loadingMessages = [
+      "正在保存最后一道题",
+      "正在计算 Big Five 与口味信号",
+      "正在过滤口碑不足的作品",
+      "正在整理你的三部推荐"
+    ];
+    let loadingIndex = 0;
+    dom.loadingTitle.textContent = loadingMessages[0];
+    state.loadingMessageTimer = window.setInterval(() => {
+      loadingIndex = Math.min(loadingIndex + 1, loadingMessages.length - 1);
+      dom.loadingTitle.textContent = loadingMessages[loadingIndex];
+    }, 420);
+    showScreen("loading");
+    const startedAt = Date.now();
 
-    if (consent) {
-      const localSaved = saveLocalRecord(record);
-      if (state.apiOnline) {
-        try {
-          await submitRecordToServer(record);
-          saveMode = "server";
-        } catch (error) {
-          console.warn("Server sync failed:", error);
-          saveMode = localSaved ? "error" : "unsaved";
-          showToast(
-            localSaved
-              ? "收集服务暂时没有响应，本次样本已保存在本机。"
-              : "收集服务暂时没有响应，浏览器也阻止了本地保存。"
-          );
+    try {
+      const result = calculateResult();
+      state.result = result;
+      const comparison = compareFavorite(title);
+      state.favoriteComparison = comparison;
+      const record = buildRecord(title, reason, consent, comparison);
+      state.responseRecord = record;
+      state.responseRecordId = record.id;
+
+      let localSaved = false;
+      let serverSaved = false;
+      if (consent) {
+        localSaved = saveLocalRecord(record);
+        if (state.apiOnline) {
+          try {
+            await submitRecordToServer(record);
+            serverSaved = true;
+          } catch (error) {
+            console.warn("Server sync failed:", error);
+          }
         }
-      } else {
-        saveMode = localSaved ? "local" : "unsaved";
       }
-    }
 
-    setSubmitButtonBusy(false);
-    renderThanks(title, reason, comparison, saveMode);
+      state.saveMode = !consent
+        ? "declined"
+        : serverSaved
+          ? "server"
+          : localSaved
+            ? (state.apiOnline ? "error" : "local")
+            : "unsaved";
+      if (state.saveMode === "error") {
+        showToast("收集服务暂时没有响应，本次结果已保存在本机。");
+      }
+
+      const elapsed = Date.now() - startedAt;
+      if (elapsed < 650) {
+        await new Promise((resolve) => window.setTimeout(resolve, 650 - elapsed));
+      }
+
+      window.clearInterval(state.loadingMessageTimer);
+      state.loadingMessageTimer = null;
+      renderResult(result);
+      showScreen("result");
+      saveSession();
+      window.setTimeout(() => {
+        if (dom.resultHeading) {
+          dom.resultHeading.setAttribute("tabindex", "-1");
+          dom.resultHeading.focus({ preventScroll: true });
+        }
+      }, 80);
+    } catch (error) {
+      console.error(error);
+      window.clearInterval(state.loadingMessageTimer);
+      state.loadingMessageTimer = null;
+      showScreen("favorite");
+      showFormError("生成推荐时出了点问题，请再试一次。");
+    } finally {
+      setSubmitButtonBusy(false);
+    }
   }
 
-  /* ------------------------------------------------------------------
-     Local/server status and data lab
-     ------------------------------------------------------------------ */
+  async function recordReaction(entry, reaction, buttons, statusElement) {
+    if (state.screen !== "result") return;
+    const animeId = entry.anime.id;
+    const key = `${state.responseRecordId || "local"}:${animeId}`;
+    if (pendingReactions.has(key)) return;
+    const at = new Date().toISOString();
+
+    state.reactions[animeId] = { value: reaction, at, synced: false };
+    buttons.forEach((button) => {
+      const selected = button.dataset.reaction === reaction;
+      button.classList.toggle("is-selected", selected);
+      button.setAttribute("aria-pressed", selected ? "true" : "false");
+    });
+
+    const localSaved = state.consent
+      ? updateLocalRecordFeedback(state.responseRecordId, animeId, reaction, at)
+      : false;
+    saveSession();
+
+    if (!state.consent) {
+      statusElement.textContent = "已保留在本页（未加入样本池）";
+      return;
+    }
+    if (!state.apiOnline) {
+      statusElement.textContent = localSaved ? "已保存在本机" : "未保存";
+      return;
+    }
+
+    pendingReactions.add(key);
+    buttons.forEach((button) => { button.disabled = true; });
+    statusElement.textContent = "正在记录…";
+    try {
+      await submitReactionToServer(state.responseRecordId, animeId, reaction);
+      state.reactions[animeId].synced = true;
+      statusElement.textContent = "已记录";
+      saveSession();
+    } catch (error) {
+      console.warn("Reaction sync failed:", error);
+      statusElement.textContent = localSaved ? "已存本机 · 未同步" : "未同步，点选可重试";
+      showToast("推荐反馈暂时没有同步到服务器，本地仍保留。");
+    } finally {
+      pendingReactions.delete(key);
+      buttons.forEach((button) => { button.disabled = false; });
+    }
+  }
 
   function updateReasonCount() {
     if (!dom.favoriteReason) return;
@@ -1787,51 +2315,89 @@
     return `"${text.replace(/"/g, '""')}"`;
   }
 
+  function feedbackValue(record, animeId) {
+    const feedback = Array.isArray(record.feedback) ? record.feedback : [];
+    const item = feedback.filter((entry) => entry.animeId === animeId).at(-1);
+    return item ? item.reaction : "";
+  }
+
   function recordsToCsv(records) {
     const headers = [
       "id",
-      "createdAt",
+      "created_at",
+      "received_at",
       "valid",
+      "quality_flags",
+      "duration_seconds",
+      "attention_passed",
       "archetype",
-      "bigFive",
-      "favoriteTitle",
-      "favoriteReason",
-      "matchStatus",
-      "predictedRank",
-      "recommendations",
-      "preferences",
-      "habits",
-      "durationSeconds",
-      "qualityFlags",
-      "answersJson",
-      "testVersion",
-      "algorithmVersion",
-      "catalogVersion"
+      "archetype_key",
+      ...TRAITS.map((trait) => `bigfive_${trait.key}`),
+      ...FEATURES.map((feature) => `pref_${feature.key}`),
+      ...HABITS.map((habit) => `habit_${habit.key}`),
+      "favorite_title",
+      "favorite_reason",
+      "favorite_match_status",
+      "favorite_predicted_rank",
+      "favorite_matched_anime",
+      "rec1_anime_id",
+      "rec1_title",
+      "rec1_match",
+      "rec1_reaction",
+      "rec2_anime_id",
+      "rec2_title",
+      "rec2_match",
+      "rec2_reaction",
+      "rec3_anime_id",
+      "rec3_title",
+      "rec3_match",
+      "rec3_reaction",
+      "scenario_signals_json",
+      "scenario_answers_json",
+      "test_version",
+      "algorithm_version",
+      "catalog_version",
+      "answers_json"
     ];
+
     const rows = records.map((record) => {
       const favorite = record.actualFavorite || {};
-      const bigFive = TRAITS
-        .map((trait) => `${trait.key}:${record.scores?.bigFive?.[trait.key] ?? ""}`)
-        .join("/");
+      const recommendations = [...(record.recommendations || [])].sort((a, b) => (a.rank || 0) - (b.rank || 0));
+      const recFields = [];
+      for (let index = 0; index < 3; index += 1) {
+        const recommendation = recommendations[index] || {};
+        recFields.push(
+          recommendation.animeId || "",
+          recommendation.title || "",
+          recommendation.matchPercent ?? "",
+          recommendation.animeId ? feedbackValue(record, recommendation.animeId) : ""
+        );
+      }
       return [
         record.id,
         record.createdAt,
+        record.receivedAt,
         record.quality?.valid,
+        (record.quality?.flags || []).join("|"),
+        record.quality?.durationSeconds,
+        record.quality?.attentionPassed,
         record.archetype?.name,
-        bigFive,
+        record.archetype?.key,
+        ...TRAITS.map((trait) => record.scores?.bigFive?.[trait.key] ?? ""),
+        ...FEATURES.map((feature) => record.scores?.preferences?.[feature.key] ?? ""),
+        ...HABITS.map((habit) => record.scores?.habits?.[habit.key] ?? ""),
         favorite.title,
         favorite.reason,
         favorite.matchStatus,
         favorite.predictedRank,
-        (record.recommendations || []).map((item) => `${item.rank}:${item.title}`).join(" | "),
-        JSON.stringify(record.scores?.preferences || {}),
-        JSON.stringify(record.scores?.habits || {}),
-        record.quality?.durationSeconds,
-        (record.quality?.flags || []).join("|"),
-        JSON.stringify(record.answers || []),
+        favorite.matchedAnimeTitle,
+        ...recFields,
+        JSON.stringify(record.scores?.scenarioSignals || {}),
+        JSON.stringify(record.scenarioAnswers || []),
         record.testVersion,
         record.algorithmVersion,
-        record.catalogVersion
+        record.catalogVersion,
+        JSON.stringify(record.answers || [])
       ].map(csvEscape).join(",");
     });
     return `\uFEFF${headers.map(csvEscape).join(",")}\r\n${rows.join("\r\n")}`;
@@ -1888,7 +2454,7 @@
         } else {
           const payload = {
             exportedAt: new Date().toISOString(),
-            schemaVersion: 2,
+            schemaVersion: 3,
             count: records.length,
             responses: records
           };
@@ -1958,36 +2524,26 @@
      Navigation & events
      ------------------------------------------------------------------ */
 
-  function clearFormIfNeededBeforeLeave() {
-    const hasDraft = dom.favoriteTitle.value.trim() || dom.favoriteReason.value.trim();
-    if (!state.submitted && hasDraft) {
-      return window.confirm("当前本命档案还没有提交，离开会丢失这些内容。确定继续吗？");
-    }
-    return true;
-  }
-
   function handleRetake() {
-    if (!clearFormIfNeededBeforeLeave()) return;
+    const hasProgress = state.answers.some((value, index) => isAnswered(value, QUESTIONS[index])) || state.result;
+    if (hasProgress) {
+      const confirmed = window.confirm("重新测试会清除当前进度和上次结果，开始一份新的记录。确定继续吗？");
+      if (!confirmed) return;
+    }
     startTest();
   }
 
   function handleGoHome() {
-    if (state.screen === "test" && state.answers.some(Boolean)) {
-      const confirmed = window.confirm("测试进度不会保留，确定退出吗？");
-      if (!confirmed) return;
-    }
     cleanupTimers();
     closeDataLab();
     showScreen("intro");
+    renderResumeCard(state.savedSession);
   }
 
   function handleTestExit() {
-    if (state.answers.some(Boolean)) {
-      const confirmed = window.confirm("测试进度不会保留，确定退出吗？");
-      if (!confirmed) return;
-    }
     cleanupTimers();
     showScreen("intro");
+    renderResumeCard(state.savedSession);
   }
 
   function scrollToMethod() {
@@ -2038,6 +2594,7 @@
 
     dom.prevButton.addEventListener("click", goToPreviousQuestion);
     dom.testExitButton.addEventListener("click", handleTestExit);
+    dom.favoriteBackButton.addEventListener("click", backFromFavorite);
     dom.favoriteReason.addEventListener("input", updateReasonCount);
     dom.favoriteForm.addEventListener("submit", handleFavoriteSubmit);
     dom.favoriteTitle.addEventListener("input", () => {
@@ -2045,7 +2602,15 @@
         dom.favoriteTitle.removeAttribute("aria-invalid");
         dom.formError.hidden = true;
       }
+      if (state.screen === "favorite") saveSession();
     });
+    dom.favoriteReason.addEventListener("input", () => {
+      if (state.screen === "favorite") saveSession();
+    });
+    dom.consentCheckbox.addEventListener("change", () => {
+      if (state.screen === "favorite") saveSession();
+    });
+    dom.resumeButton.addEventListener("click", resumeSavedSession);
 
     dom.dataModal.addEventListener("click", (event) => {
       if (event.target.hasAttribute("data-close-modal")) closeDataLab();
@@ -2094,6 +2659,34 @@
     detectServer();
     updateReasonCount();
     renderCatalogList();
+
+    let saved = null;
+    try {
+      const raw = window.localStorage.getItem(SESSION_KEY);
+      if (raw) saved = JSON.parse(raw);
+    } catch (error) {
+      console.warn("Could not read saved session:", error);
+    }
+    if (saved && saved.version === 3) {
+      state.savedSession = saved;
+      const activeTab = (() => {
+        try {
+          return window.sessionStorage.getItem(ACTIVE_TAB_KEY) === "1";
+        } catch {
+          return false;
+        }
+      })();
+      if (activeTab && saved.screen !== "intro") {
+        restoreSessionData(saved);
+      } else {
+        state.screen = "intro";
+        state.sessionReady = true;
+        renderResumeCard(saved);
+      }
+    } else {
+      state.screen = "intro";
+      state.sessionReady = true;
+    }
   }
 
   init();
