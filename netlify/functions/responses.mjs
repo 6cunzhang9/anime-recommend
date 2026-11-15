@@ -1,4 +1,7 @@
-import { errorResponse, getResponsesStore, jsonResponse, responseKey } from "../shared/store.mjs";
+import { checkAccountContext, getUser, keyPart, readJson, RequestError } from "../shared/auth.mjs";
+import { deleteResponse, errorResponse, getResponsesStore, jsonResponse, responseKey } from "../shared/store.mjs";
+import v4 from "../../v4-validation.js";
+import { changeEntry, packQuestionnaire, publicationFor } from "../shared/records.mjs";
 import { ValidationError, validateQuestionnaire } from "../shared/validation.mjs";
 
 const MAX_BODY_BYTES = 220 * 1024;
@@ -16,33 +19,46 @@ export const config = {
 
 export default async function handler(req) {
   try {
-    const contentType = String(req.headers.get("content-type") || "");
-    if (!contentType.includes("application/json")) {
-      return errorResponse(415, "Content-Type must be application/json");
-    }
-    const raw = await req.text();
-    if (new TextEncoder().encode(raw).byteLength > MAX_BODY_BYTES) {
-      return errorResponse(413, "请求内容过长");
-    }
-    let payload;
-    try {
-      payload = JSON.parse(raw);
-    } catch {
-      return errorResponse(400, "请求内容不是合法的 JSON");
+    const payload = await readJson(req, MAX_BODY_BYTES);
+    const user = await getUser(req);
+    checkAccountContext(payload, user);
+
+    if (!user) return errorResponse(401, "登录后即可匿名发布本命番并保存画像");
+    if (payload.action === "delete") {
+      if (typeof payload.response_id !== "string" || !keyPart.test(payload.response_id)) {
+        return errorResponse(400, "测评编号无效");
+      }
+      await deleteResponse(payload.response_id, user.id);
+      return jsonResponse({ ok: true });
     }
 
     const record = validateQuestionnaire(payload);
-    if (!record.consent.profile_storage) {
-      return errorResponse(400, "用户未允许保存画像");
+    if (!record.consent.profile_storage) return errorResponse(400, "需要保存测评才能发布");
+    const archive = payload.import_local === true;
+    const editing = payload.action === "update";
+    if (!archive) {
+      const works = record.actual_favorites.map(({ external_ref, title_raw }) =>
+        v4.workIdentity(external_ref || { title_display: title_raw }));
+      if (new Set(works).size !== works.length) return errorResponse(400, "同一部作品只可填写一次");
     }
-    const store = getResponsesStore();
-    const result = await store.setJSON(responseKey(record.response_id), record, { onlyIfNew: true });
-    if (!result.modified) {
-      return jsonResponse({ ok: true, id: record.response_id, duplicate: true, receivedAt: record.received_at }, 200);
-    }
-    return jsonResponse({ ok: true, id: record.response_id, receivedAt: record.received_at }, 201);
+    const key = responseKey(record.response_id, user.id);
+    const result = await changeEntry(getResponsesStore(), key, (previous) => {
+      if (editing && !previous) return null;
+      const publication = publicationFor(previous || {}) || (!archive && !editing ? {
+        published_at: record.received_at, moderated: false
+      } : null);
+      return packQuestionnaire({
+        ...record,
+        submitted_at: previous?.submitted_at || (archive ? record.submitted_at : record.received_at),
+        ...(publication && { publication })
+      });
+    }, { createOnly: !editing });
+    if (result.conflict) return errorResponse(409, "测评已变更，请重试");
+    if (!result.record) return errorResponse(404, "测评已删除或不存在");
+    return jsonResponse({ ok: true, id: record.response_id, publication: result.record.publication || null,
+      duplicate: !result.modified, receivedAt: result.record.received_at }, result.modified ? 201 : 200);
   } catch (error) {
-    if (error instanceof ValidationError) return errorResponse(error.status, error.message);
+    if (error instanceof ValidationError || error instanceof RequestError) return errorResponse(error.status, error.message);
     console.error("responses function failed:", error);
     return errorResponse(500, "服务器保存问卷失败，请稍后再试");
   }

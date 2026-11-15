@@ -19,8 +19,8 @@
       </span>
     </button>
     <div class="header-actions">
-      <span class="header-meta"><b data-question-count>40</b> 道题 · 约 8–12 分钟</span>
-      <button class="quiet-button js-open-tree" type="button">树洞</button>
+      <button class="outline-button tree-entry js-open-tree" type="button">树洞</button>
+      <button class="quiet-button" id="account-open" type="button">登录</button>
     </div>
   </header>
 
@@ -28,20 +28,13 @@
     <!-- 开始页 -->
     <section class="screen intro-screen is-active" id="screen-intro">
       <div class="start-wrap">
-        <p class="start-eyebrow">关于你具体为什么喜欢一部作品</p>
-        <h1>本命番推荐所</h1>
-        <p class="start-lead">不是先把你归类，再去猜你会喜欢什么。</p>
-        <button class="start-button" id="start-btn" type="button">开始测试</button>
-        <p class="start-meta">
-          <b data-question-count>40</b> 道题 · 约 8–12 分钟 · 可保存草稿<br>
-          叙事、人物、关系、情绪、视听、主题与明确排斥 · <b data-anime-count>148</b> 部候选快照
-        </p>
-        <ul class="start-guide">
-          <li>按“通常最容易喜欢的作品”回答，不按别人认可的作品回答。</li>
-          <li>看得不多或没接触过某类作品时，可以选“不了解 / 不确定 / 无特别偏好”，不强迫猜测。</li>
-          <li>“喜欢”与“觉得制作好”可以不同；第 40 题收集的是前者。</li>
-          <li>约 8–12 分钟，中途可保存草稿；刷新或重新进入可继续。</li>
-        </ul>
+        <h1>找到你的下一部本命番</h1>
+        <p class="start-lead">聊聊你为什么喜欢一部作品。</p>
+        <div class="start-actions">
+          <button class="start-button" id="start-btn" type="button">开始测试</button>
+          <button class="outline-button js-open-tree" type="button">逛树洞</button>
+        </div>
+        <p class="start-meta">40 道题 · 约 8–12 分钟</p>
         <div class="resume-card" id="resume-card" hidden>
           <div>
             <strong id="resume-title">上次的进度还在</strong>
@@ -49,42 +42,7 @@
           </div>
           <button class="outline-button" id="resume-btn" type="button">继续</button>
         </div>
-        <button class="text-button tree-near-start js-open-tree" type="button">进入树洞 · 查看我的档案与番剧清单 <span aria-hidden="true">↗</span></button>
       </div>
-
-      <section class="how-section" id="method" aria-labelledby="how-heading">
-        <p class="eyebrow">它是怎么工作的</p>
-        <h2 id="how-heading">先记录你具体为什么喜欢，再谈推荐。</h2>
-        <div class="how-flow">
-          <article>
-            <span>01</span>
-            <h3>40 道审美问题</h3>
-            <p>问观看经验、叙事驱动、人物关系、情绪、视听、主题、节奏和明确排斥，不把喜欢压成一个性格标签。</p>
-          </article>
-          <article>
-            <span>02</span>
-            <h3>真实作品是主锚点</h3>
-            <p>最后一题请你写下真正喜欢的作品、喜欢强度和理由。匹配不到外部作品也保留原始题名。</p>
-          </article>
-          <article>
-            <span>03</span>
-            <h3>候选先过质量门槛</h3>
-            <p>推荐来自经过双平台口碑筛选的候选快照，再按你的直接审美、作品锚点和排斥项排序。</p>
-          </article>
-          <article>
-            <span>04</span>
-            <h3>可解释，也可纠正</h3>
-            <p>每张推荐卡给出来自具体问题的理由；后续评价和反馈会进入下一次推荐，而不是只存在于后台。</p>
-          </article>
-        </div>
-        <p class="method-source">
-          本问卷不是临床或人格诊断。作品评分来自
-          <a href="https://anilist.co/" target="_blank" rel="noopener noreferrer">AniList</a>
-          与
-          <a href="https://myanimelist.net/" target="_blank" rel="noopener noreferrer">MyAnimeList</a>
-          的聚合快照；封面来自 AniList，版权归原作者及权利方所有。数据用途与导出说明集中在树洞的「数据与推荐方式」。
-        </p>
-      </section>
     </section>
 
     <!-- 40 题：q01–q39 -->
@@ -115,10 +73,6 @@
           </div>
         </div>
 
-        <div class="test-footnote">
-          <span>没有对错，也不是人格诊断。按通常最容易喜欢的作品回答。</span>
-          <span>进度会自动保存在本机，刷新后可继续。</span>
-        </div>
       </div>
     </section>
 
@@ -135,36 +89,22 @@
         </div>
 
         <div class="step-copy">
-          <p class="eyebrow">q40 / YOUR REAL FAVORITES</p>
           <h2 id="favorites-heading">你真正喜欢的作品</h2>
-          <p class="step-lead">请至少填写 1 部、最多 5 部“你自己真正喜欢”的动画/番剧。不是让你列公认神作，也不是最近刚看过的作品；请填即使知道有缺点、仍然愿意重看、推荐或长期记得的作品。</p>
-          <p class="step-invite">这部分是推荐最重要的锚点。匹配不到外部作品时，仍会保留你的原始题名和理由。</p>
+          <p class="step-lead">填 1–5 部让你想重看、推荐或一直记得的作品。</p>
         </div>
 
         <form class="favorite-form" id="favorites-form" novalidate>
           <div id="favorite-entries" class="favorite-entries"></div>
           <button class="outline-button add-favorite-button" id="add-favorite" type="button">＋ 再添加一部（最多 5 部）</button>
 
-          <fieldset class="consent-fieldset">
-            <legend>数据与隐私</legend>
-            <label class="consent-row" for="consent-profile">
-              <input id="consent-profile" type="checkbox" checked>
-              <span class="custom-check" aria-hidden="true">✓</span>
-              <span class="consent-copy">允许保存我的问卷、画像和真实喜欢作品，供我自己在树洞中查看与导出。<small>不收集姓名、联系方式或设备指纹。</small></span>
-            </label>
-            <label class="consent-row" for="consent-similar">
-              <input id="consent-similar" type="checkbox">
-              <span class="custom-check" aria-hidden="true">✓</span>
-              <span class="consent-copy">允许将我的审美向量匿名用于“相似画像用户喜欢”推荐。<small>默认关闭；开启后也只向他人展示群体化结果，不展示原始答案、ID 或理由原文。</small></span>
-            </label>
-          </fieldset>
+          <div class="publish-note">
+            <strong id="favorite-publish-label">匿名发到树洞</strong>
+            <p id="favorite-publish-note">树洞显示这一步填写的作品和理由。完整问卷与推荐结果保存在账号档案。</p>
+            <label class="publish-option"><input id="consent-similar" type="checkbox"> 参与相似口味推荐</label>
+          </div>
 
-          <button class="primary-button submit-button" id="submit-favorites" type="submit">
-            <span>提交第 40 题并生成推荐</span>
-            <span aria-hidden="true">→</span>
-          </button>
+          <button class="primary-button submit-button" id="submit-favorites" type="submit">发布并查看推荐</button>
           <p class="form-error" id="favorites-error" role="alert" hidden></p>
-          <p class="form-privacy">提交前会做必答校验。外部作品匹配失败不会阻止提交。</p>
         </form>
       </div>
     </section>
@@ -172,9 +112,7 @@
     <!-- 计算中 -->
     <section class="screen loading-screen" id="screen-loading" aria-live="polite" aria-busy="true">
       <div class="loading-pulse" aria-hidden="true"><span></span></div>
-      <p class="eyebrow">BUILDING YOUR PROFILE</p>
       <h2 id="loading-title">正在整理你的 40 道回答</h2>
-      <p class="loading-sub">原始答案、真实作品锚点和推荐快照会分开保存。</p>
     </section>
 
     <!-- 结果页 -->
@@ -182,7 +120,6 @@
       <div class="result-wrap">
         <div class="result-topline">
           <div>
-            <p class="eyebrow">YOUR RESULT / V4</p>
             <h2 class="result-heading">给你的推荐</h2>
           </div>
           <button class="outline-button js-retake" type="button">重新测试 <span aria-hidden="true">↻</span></button>
@@ -200,38 +137,13 @@
         </article>
 
         <section class="recommendation-section" aria-labelledby="recommendation-heading">
-          <div class="rec-heading">
-            <div>
-              <p class="eyebrow">CORE MATCHES</p>
-              <h2 id="recommendation-heading">更接近你的候选</h2>
-            </div>
-            <p class="rec-note">来自真实作品锚点、直接审美与明确排斥。<br>不是按题材标签把所有人推向同一批作品。</p>
-          </div>
+          <div class="rec-heading"><h2 id="recommendation-heading">为你精选</h2></div>
           <div class="recommendation-list" id="recommendations"></div>
         </section>
 
-        <section class="community-section" id="similar-section" hidden>
-          <div class="rec-heading">
-            <div>
-              <p class="eyebrow">SIMILAR TASTE / ANONYMOUS</p>
-              <h2>相似画像用户真正喜欢的作品</h2>
-            </div>
-            <p class="rec-note">只使用明确同意匿名相似用途的群体化信号。</p>
-          </div>
-          <div id="similar-list"></div>
-          <p class="community-status" id="similar-status"></p>
-        </section>
-
-        <section class="community-section" id="community-section" hidden>
-          <div class="rec-heading">
-            <div>
-              <p class="eyebrow">TREE HOLLOW / HIGH RATED</p>
-              <h2>树洞中获得高评价的作品</h2>
-            </div>
-            <p class="rec-note">小样本会收缩，不把单条五星排到第一。</p>
-          </div>
+        <section class="community-section" id="community-section" aria-labelledby="community-heading" hidden>
+          <div class="rec-heading"><h2 id="community-heading">社区加推</h2></div>
           <div id="community-list"></div>
-          <p class="community-status" id="community-status"></p>
         </section>
 
         <details class="analysis-panel">
@@ -239,10 +151,6 @@
           <div class="analysis-content" id="result-details"></div>
         </details>
 
-        <div class="result-bottom-actions">
-          <button class="text-button js-retake" type="button"><span aria-hidden="true">↻</span> 重新测试</button>
-          <button class="text-button js-open-tree" type="button">进入树洞 · 我的档案 <span aria-hidden="true">→</span></button>
-        </div>
       </div>
     </section>
 
@@ -252,17 +160,17 @@
         <div class="tree-topline">
           <button class="test-exit" id="tree-back-btn" type="button"><span aria-hidden="true">←</span> 返回</button>
           <div>
-            <p class="eyebrow">TREE HOLLOW</p>
             <h1>树洞</h1>
           </div>
           <button class="outline-button js-retake" type="button">重新测试</button>
         </div>
-        <p class="tree-lead">这里保存你的问卷、真实喜欢作品、番剧评价、推荐反馈和历史档案。不是公开主页，也不会向其他用户展示你的原始内容。</p>
         <nav class="tree-tabs" aria-label="树洞分区">
-          <button type="button" data-tree-tab="profile" class="is-active">我的档案</button>
-          <button type="button" data-tree-tab="library">番剧清单</button>
-          <button type="button" data-tree-tab="history">历史档案</button>
-          <button type="button" data-tree-tab="data">数据与推荐方式</button>
+          <button type="button" data-tree-tab="reviews" class="is-active">社区发言</button>
+          <button type="button" data-tree-tab="library">写评价</button>
+          <button type="button" data-tree-tab="profile">我的档案</button>
+          <button type="button" data-tree-tab="history">历史</button>
+          <button type="button" data-tree-tab="data">说明</button>
+          <button type="button" data-tree-tab="admin" id="admin-tab" hidden>管理</button>
         </nav>
         <div id="tree-content" class="tree-content"></div>
       </div>
@@ -270,60 +178,49 @@
   </main>
 
   <footer class="site-footer">
-    <div class="footer-brand">
-      <span class="brand-seal small" aria-hidden="true">本</span>
-      <span>本命番推荐所</span>
-    </div>
-    <p>番剧审美问卷与可解释推荐；不是心理诊断。口碑为 AniList + MyAnimeList 聚合快照，封面来自 AniList，作品版权归原作者及权利方所有。</p>
     <div class="footer-links">
-      <button type="button" data-scroll-method>方法说明</button>
-      <button type="button" class="js-open-tree">树洞</button>
-      <button type="button" id="admin-open-btn" hidden>管理员导出</button>
+      <button type="button" id="help-open">数据与推荐说明</button>
+      <button type="button" id="admin-open-btn">管理员</button>
     </div>
   </footer>
 
-  <!-- 管理员数据研究室（仅管理员入口可见） -->
-  <div class="modal" id="data-modal" hidden>
-    <div class="modal-scrim" data-close-modal></div>
-    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="data-modal-title">
-      <div class="modal-head">
-        <div>
-          <p class="eyebrow">ADMIN / DATA ROOM</p>
-          <h2 id="data-modal-title">管理员导出</h2>
-        </div>
-        <button class="modal-close" type="button" data-close-modal aria-label="关闭管理员导出">×</button>
-      </div>
-      <p class="modal-lead">仅用于管理员下载匿名研究样本。普通用户的数据导出在树洞的「历史档案」中，不经过这个入口。</p>
-      <div class="stats-grid">
-        <div class="stat-card"><span class="stat-value" id="stat-total">0</span><span class="stat-label">份已提交问卷</span></div>
-        <div class="stat-card"><span class="stat-value" id="stat-reason">0</span><span class="stat-label">份含真实作品</span></div>
-        <div class="stat-card"><span class="stat-value" id="stat-hit">—</span><span class="stat-label">历史命中记录</span></div>
-      </div>
-      <div class="source-status" id="data-source"><span class="status-dot" aria-hidden="true"></span><span>正在检测数据来源…</span></div>
-      <p class="quality-summary" id="data-quality-summary">v4 不再使用注意力题或有效性打分；旧版质量标记仅用于历史记录说明。</p>
-      <div class="admin-export" id="admin-export" hidden>
-        <div>
-          <strong>管理员密钥</strong>
-          <p>原始样本包含用户填写的作品理由，只有持有 ADMIN_TOKEN 的管理员可以导出。</p>
-        </div>
-        <label for="admin-token">ADMIN_TOKEN</label>
-        <input id="admin-token" type="password" autocomplete="off" placeholder="输入 ADMIN_TOKEN">
-      </div>
-      <div class="data-actions">
-        <button class="outline-button" id="export-json" type="button">导出 JSON</button>
-        <button class="outline-button" id="export-csv" type="button">导出 CSV（扁平表）</button>
-      </div>
-      <details class="schema-details">
-        <summary>导出字段说明</summary>
-        <p>JSON 保留 v4 原始答案、派生画像、作品锚点、推荐快照、评价与反馈；旧 v2/v3 记录原样保留并标记版本。CSV 一行一份问卷，反馈列按推荐位展开。</p>
-      </details>
-      <details class="catalog-details">
-        <summary>候选快照 · <span data-catalog-count>148</span> 部通过口碑门槛</summary>
-        <p class="catalog-note">这只是推荐候选的最小快照，不是完整番剧库。</p>
-        <div class="catalog-list" id="catalog-list"></div>
-      </details>
+  <dialog class="modal-card account-dialog" id="account-modal" aria-labelledby="account-title">
+    <div class="modal-head">
+      <h2 id="account-title">我的账号</h2>
+      <button class="modal-close" type="button" id="account-close" aria-label="关闭">×</button>
     </div>
-  </div>
+    <div id="account-guest">
+      <div class="account-modes" role="group" aria-label="账号操作">
+        <button class="outline-button" type="button" data-account-mode="login" aria-pressed="true">登录</button>
+        <button class="outline-button" type="button" data-account-mode="register" aria-pressed="false">注册</button>
+      </div>
+      <form id="account-form" class="tree-form">
+        <label for="account-username">用户名</label>
+        <input id="account-username" name="username" autocomplete="username" required minlength="3" maxlength="32" pattern="[A-Za-z0-9_]{3,32}" autocapitalize="none" spellcheck="false">
+        <label for="account-password">密码</label>
+        <div class="password-field">
+          <input id="account-password" name="password" type="password" autocomplete="current-password" required>
+          <button class="text-button" type="button" id="account-show-password" aria-pressed="false">显示</button>
+        </div>
+        <div class="account-confirm" id="account-confirm" hidden>
+          <label for="account-repeat">再次输入密码</label>
+          <input id="account-repeat" type="password" autocomplete="new-password">
+          <p class="tree-copy">用户名使用 3–32 位英文字母、数字或下划线，密码至少 10 个字符。</p>
+        </div>
+        <button class="primary-button" type="submit" id="account-submit">登录</button>
+      </form>
+    </div>
+    <div id="account-member" hidden>
+      <p id="account-name"></p>
+      <div class="tree-actions">
+        <button class="outline-button" type="button" id="account-profile">我的档案</button>
+        <button class="outline-button" type="button" id="account-admin" hidden>管理主页</button>
+        <button class="outline-button" type="button" id="account-import">导入旧测评档案</button>
+        <button class="text-button" type="button" id="account-logout">退出登录</button>
+      </div>
+    </div>
+    <p id="account-status" class="tree-copy" role="status"></p>
+  </dialog>
 
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 

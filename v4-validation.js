@@ -47,6 +47,17 @@ function ensureDate(value, fallback = new Date().toISOString()) {
   return Number.isNaN(Date.parse(text)) ? fallback : new Date(text).toISOString();
 }
 
+function normalizeWorkTitle(value) {
+  return cleanText(value, 160).normalize("NFKC").toLowerCase().replace(/[\p{P}\p{Z}\s]+/gu, "");
+}
+
+function workIdentity(ref) {
+  const provider = ref?.provider === "anilist-candidate-snapshot" ? "anilist" : ref?.provider;
+  return provider && provider !== "manual" && ref.provider_id
+    ? `${provider}:${ref.provider_id}`
+    : `title:${normalizeWorkTitle(ref?.title_display || ref?.title_canonical)}`;
+}
+
 function validateExternalRef(input, required = false) {
   if (!input || typeof input !== "object" || Array.isArray(input)) {
     if (required) fail("缺少作品外部引用");
@@ -54,20 +65,25 @@ function validateExternalRef(input, required = false) {
   }
   const provider = cleanText(input.provider, 60);
   const providerId = cleanText(input.provider_id, 120);
-  const canonicalUrl = cleanText(input.canonical_url, 500);
   const title = cleanText(input.title_display || input.title_canonical, 160);
   if (required && (!provider || !title)) fail("作品引用不完整");
-  if (canonicalUrl && !/^https?:\/\//i.test(canonicalUrl)) fail("作品引用链接格式不正确");
+  let canonicalUrl = "";
+  const numericId = /^\d{1,12}$/.test(providerId);
+  if (provider === "bangumi" && numericId) canonicalUrl = `https://bgm.tv/subject/${providerId}`;
+  if (["anilist-candidate-snapshot", "anilist"].includes(provider) && numericId) {
+    canonicalUrl = `https://anilist.co/anime/${providerId}`;
+  }
+  if (provider === "mal" && numericId) canonicalUrl = `https://myanimelist.net/anime/${providerId}`;
   const status = ["matched", "ambiguous", "unmatched", "stale"].includes(input.lookup_status)
     ? input.lookup_status : "unmatched";
   return {
-    provider,
-    provider_id: providerId,
-    canonical_url: canonicalUrl,
-    title_canonical: title,
+    provider: canonicalUrl ? provider : "manual",
+    provider_id: canonicalUrl ? providerId : "",
+    canonical_url: canonicalUrl || (title ? `https://bgm.tv/subject_search/${encodeURIComponent(title)}?cat=2` : ""),
+    title_canonical: cleanText(input.title_canonical, 160) || title,
     title_display: title,
     media_type: ["tv", "movie", "ova", "ona", "unknown"].includes(input.media_type) ? input.media_type : "unknown",
-    lookup_status: status,
+    lookup_status: canonicalUrl ? status : "unmatched",
     resolved_at: input.resolved_at ? ensureDate(input.resolved_at) : null
   };
 }
@@ -279,101 +295,109 @@ function jaccardSets(a, b) {
   return intersection / new Set([...a, ...b]).size;
 }
 
-function buildCommunity(records, ratings, request) {
-  const signals = request?.signals && typeof request.signals === "object" ? request.signals : {};
-  const requestCodes = new Set([
-    ...(Array.isArray(signals.settings) ? signals.settings : []),
-    ...(Array.isArray(signals.relationships) ? signals.relationships : []),
-    ...(Array.isArray(signals.themes) ? signals.themes : []),
-    ...(Array.isArray(signals.drivers) ? signals.drivers : [])
-  ]);
+function newestPerAccount(records) {
+  const byOwner = new Map();
+  const anonymous = [];
+  const boundIds = new Set(records.filter((record) => record.accountOwner).map((record) => record.response_id));
+  for (const record of records) {
+    if (!record.accountOwner && boundIds.has(record.response_id)) continue;
+    if (!record.accountOwner) {
+      anonymous.push(record);
+      continue;
+    }
+    const previous = byOwner.get(record.accountOwner);
+    if (!previous || record.submitted_at > previous.submitted_at) byOwner.set(record.accountOwner, record);
+  }
+  return [...anonymous, ...byOwner.values()];
+}
 
-  const similarAvailable = request?.consent_similar === true;
-  const neighbors = [];
-  records
-    .filter((record) => Number(record.schemaVersion) === 4 && record.consent?.similar_taste_anonymous_use === true)
-    .filter((record) => !request?.response_id || record.response_id !== request.response_id)
-    .forEach((record) => {
-      const similarity = jaccardSets(requestCodes, recordTasteCodes(record));
-      if (similarity > 0) neighbors.push({ record, similarity });
-    });
-  neighbors.sort((a, b) => b.similarity - a.similarity);
+function personalityMatch(a, b) {
+  const pairs = ["q05", "q06", "q07", "q08"].map((key) => [a?.[key]?.value, b?.[key]?.value])
+    .filter((pair) => pair.every((value) => Number.isInteger(value) && value >= 1 && value <= 5));
+  if (!pairs.length) return 0;
+  return pairs.reduce((total, [left, right]) => total + 1 - Math.abs(left - right) / 4, 0) / pairs.length;
+}
+
+function groupWork(groups, ref) {
+  const key = normalizeWorkTitle(ref.title_display) || workIdentity(ref);
+  let group = groups.get(key);
+  if (!group) {
+    group = { ref, votes: new Map() };
+    groups.set(key, group);
+  } else if (group.ref.provider === "manual" && ref.provider !== "manual") {
+    group.ref = ref;
+  }
+  return group;
+}
+
+function communityItem(ref, count, source) {
+  return { title: ref.title_display, display_title: ref.title_display, external_ref: ref,
+    canonical_url: ref.canonical_url, signal_count: count, source };
+}
+
+function buildCommunity(records, ratings, request) {
+  const signals = request?.signals;
+  const requestCodes = new Set(["settings", "relationships", "themes", "drivers"].flatMap((key) =>
+    Array.isArray(signals?.[key]) ? signals[key].filter((code) => typeof code === "string") : []));
+  const actor = request?.accountOwner;
+  const neighbors = request?.consent_similar === true ? newestPerAccount(records)
+    .filter((record) => Number(record.schemaVersion) === 4 && record.consent?.similar_taste_anonymous_use === true && !record.publication?.moderated)
+    .filter((record) => record.response_id !== request.response_id && (!actor || record.accountOwner !== actor))
+    .map((record) => {
+      const taste = jaccardSets(requestCodes, recordTasteCodes(record));
+      return { record, similarity: taste * 0.8 + personalityMatch(request.personality, record.answers) * 0.2 };
+    })
+    .filter(({ similarity }) => similarity >= 0.15)
+    .sort((a, b) => b.similarity - a.similarity)
+    .slice(0, 25) : [];
 
   const similarWorks = new Map();
-  const similarNeighbors = neighbors.slice(0, 25);
-  if (similarAvailable && similarNeighbors.length >= 3) {
-    similarNeighbors.forEach(({ record, similarity }) => {
-      (record.actual_favorites || []).forEach((favorite) => {
-        if (!["love", "like"].includes(favorite.like_strength)) return;
-        const ref = favorite.external_ref;
-        const key = ref?.provider_id || favorite.title_raw;
-        const current = similarWorks.get(key) || {
-          title: favorite.title_raw,
-          canonical_url: ref?.canonical_url || "",
-          count: 0,
-          score: 0
-        };
-        current.count += 1;
-        current.score += similarity;
-        similarWorks.set(key, current);
-      });
-    });
+  for (const { record, similarity } of neighbors) {
+    for (const favorite of record.actual_favorites || []) {
+      if (!["love", "like", "recent_like"].includes(favorite.like_strength)) continue;
+      const ref = validateExternalRef(favorite.external_ref || { provider: "manual", title_display: favorite.title_raw });
+      if (!ref?.title_display) continue;
+      const { votes } = groupWork(similarWorks, ref);
+      votes.set(record.accountOwner || record.response_id, similarity);
+    }
   }
   const similar = [...similarWorks.values()]
-    .filter((item) => item.count >= 2)
-    .sort((a, b) => b.score - a.score || b.count - a.count)
-    .slice(0, 5)
-    .map((item) => ({
-      display_title: item.title,
-      title: item.title,
-      canonical_url: item.canonical_url,
-      signal_count: item.count,
-      note: "聚合自明确同意匿名相似用途的画像"
-    }));
-
-  const aggregate = new Map();
-  ratings
-    .filter((rating) => rating.anonymous_use === true && rating.rating !== null)
-    .filter((rating) => Number(rating.rating) >= 4 || rating.sentiment === "like")
-    .forEach((rating) => {
-      const ref = rating.external_ref || rating.work_ref || {};
-      const key = ref.provider_id || ref.title_display || ref.title_canonical;
-      if (!key) return;
-      const current = aggregate.get(key) || {
-        title: ref.title_display || ref.title_canonical || "未知作品",
-        canonical_url: ref.canonical_url || "",
-        count: 0,
-        sum: 0
-      };
-      current.count += 1;
-      current.sum += Number(rating.rating) || 4;
-      aggregate.set(key, current);
-    });
-  const community = [...aggregate.values()]
-    .filter((item) => item.count >= 2)
-    .map((item) => ({
-      display_title: item.title,
-      title: item.title,
-      canonical_url: item.canonical_url,
-      signal_count: item.count,
-      smoothed_score: Number(((item.sum + 3 * 3.5) / (item.count + 3)).toFixed(2)),
-      note: `小样本收缩评分 ${((item.sum + 3 * 3.5) / (item.count + 3)).toFixed(2)}/5`
+    .filter(({ votes }) => votes.size >= 2)
+    .map(({ ref, votes }) => ({
+      ...communityItem(ref, votes.size, "similar"),
+      score: [...votes.values()].reduce((total, vote) => total + vote, 0)
     }))
-    .sort((a, b) => b.smoothed_score - a.smoothed_score || b.signal_count - a.signal_count)
-    .slice(0, 5);
+    .sort((a, b) => b.score - a.score || b.signal_count - a.signal_count)
+    .slice(0, 12);
 
-  return {
-    available_similar: similar.length > 0,
-    similar,
-    similar_note: similarAvailable
-      ? (similar.length ? "只展示至少两个独立正向信号的群体化结果；不展示用户身份、答案或原文。" : "匿名邻居或共同作品数量不足，暂不展示。")
-      : "你没有开启匿名相似用途，因此不使用这一来源。",
-    available_community: community.length > 0,
-    community,
-    community_note: community.length
-      ? "来自树洞中允许匿名使用的评价；样本量很小，已做贝叶斯收缩。"
-      : "匿名高评价样本不足 2 条，暂不展示。"
-  };
+  const ratedWorks = new Map();
+  for (const rating of ratings) {
+    if (rating.publication?.moderated) continue;
+    const isPublic = Boolean(rating.accountOwner) && rating.public_review === true;
+    if (!isPublic && rating.anonymous_use !== true) continue;
+    if (actor && rating.accountOwner === actor) continue;
+    const ref = validateExternalRef(rating.external_ref || rating.work_ref);
+    if (!ref?.title_display) continue;
+    const explicitScore = Number(rating.rating);
+    const negative = rating.sentiment === "dislike" || rating.status === "dropped";
+    const score = negative ? Math.min(explicitScore || 2, 2) : explicitScore || (rating.sentiment === "like" ? 4 : 0);
+    if (!score || score < 1 || score > 5) continue;
+    const { votes } = groupWork(ratedWorks, ref);
+    const voter = rating.accountOwner || rating.id;
+    const date = rating.received_at || rating.updated_at || "";
+    if (!votes.has(voter) || votes.get(voter).date < date) votes.set(voter, { score, date, isPublic });
+  }
+  const community = [...ratedWorks.values()].flatMap(({ ref, votes }) => {
+    const values = [...votes.values()];
+    const sum = values.reduce((total, vote) => total + vote.score, 0);
+    if (sum / votes.size < 4 || (votes.size < 2 && !values.some((vote) => vote.isPublic))) return [];
+    return [{
+      ...communityItem(ref, votes.size, "reviews"),
+      smoothed_score: Number(((sum + 3 * 3.5) / (votes.size + 3)).toFixed(2))
+    }];
+  }).sort((a, b) => b.smoothed_score - a.smoothed_score || b.signal_count - a.signal_count).slice(0, 12);
+  return { available_similar: Boolean(similar.length), similar,
+    available_community: Boolean(community.length), community };
 }
 
 function isLegacy(record) {
@@ -456,7 +480,7 @@ function flattenForCsv(records, reactions) {
 
 function csvEscape(value) {
   let text = String(value === undefined || value === null ? "" : value);
-  if (/^[=+\-@]/.test(text)) text = `'${text}`;
+  if (/^[\s\u0000-\u001f]*[=+\-@]|^[\t\r\n]/.test(text)) text = `'${text}`;
   return `"${text.replace(/"/g, '""')}"`;
 }
 
@@ -468,6 +492,9 @@ module.exports = {
   summarize,
   flattenForCsv,
   buildCommunity,
+  validateExternalRef,
+  normalizeWorkTitle,
+  workIdentity,
   isLegacy,
   FEEDBACK_VALUES,
   REVIEW_STATUSES

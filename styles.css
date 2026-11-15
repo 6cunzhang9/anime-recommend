@@ -290,6 +290,99 @@ a { color: var(--green); }
 }
 .start-meta b { color: var(--ink-soft); font-weight: 600; }
 
+.start-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.65rem;
+  align-items: stretch;
+}
+
+.start-actions .outline-button {
+  min-height: 2.9rem;
+  padding: 0.7rem 1.35rem;
+  font-size: 0.9rem;
+}
+
+.header-actions .tree-entry {
+  color: var(--green-dark);
+  border-color: var(--green-line);
+  background: var(--green-soft);
+}
+
+.account-dialog {
+  margin: auto;
+  color: var(--ink);
+}
+
+.account-dialog::backdrop {
+  background: rgba(23, 33, 27, 0.38);
+}
+
+.account-dialog .tree-form { margin-top: 1rem; }
+.account-dialog .tree-actions { margin-top: 0.6rem; }
+.account-dialog [role="status"]:empty { display: none; }
+
+.public-review p { overflow-wrap: anywhere; margin: 0.4rem 0 0; }
+.public-review h3, .community-pick h3 { margin: 0; }
+.community-pick { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.saved-recommendations { padding-inline-start: 1.5rem; line-height: 1.75; }
+
+.publish-note {
+  margin: 1rem 0;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--green-line);
+  border-radius: 10px;
+  background: var(--green-soft);
+  color: var(--ink-soft);
+  font-size: 0.76rem;
+  line-height: 1.6;
+}
+
+.publish-note p { margin: 0.2rem 0 0.55rem; }
+.publish-option { display: flex; align-items: center; gap: 0.35rem; }
+.publish-option input { accent-color: var(--green); }
+
+.account-modes { display: flex; gap: 0.4rem; margin: 0.85rem 0; flex-wrap: wrap; }
+.account-modes [aria-pressed="true"] { background: var(--green-soft); color: var(--green-dark); border-color: var(--green-line); }
+.account-confirm input, .account-dialog .tree-form > input, .password-field input {
+  width: 100%;
+  min-width: 0;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+}
+.password-field { position: relative; }
+.password-field input { padding-inline-end: 3.5rem; }
+.password-field button { position: absolute; inset: 50% 0.6rem auto auto; transform: translateY(-50%); }
+.account-confirm .tree-copy { margin-top: 0.35rem; }
+
+.feed-controls { flex-wrap: wrap; }
+.feed-controls select {
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: white;
+  color: var(--ink);
+  padding: 0.45rem;
+  font: inherit;
+  font-size: 0.75rem;
+}
+.public-review .post-meta { color: var(--muted); font-size: 0.72rem; margin: 0 0 0.7rem; }
+.post-work + .post-work { border-top: 1px solid var(--line); margin-top: 0.9rem; padding-top: 0.9rem; }
+.public-review > button { margin-top: 0.8rem; }
+.public-review.is-moderated { background: var(--surface); }
+.admin-home-head { margin-bottom: 1.1rem; }
+.admin-home-head h3 { margin: 0 0 0.35rem; }
+#admin-overview:empty { display: none; }
+.admin-result summary { cursor: pointer; overflow-wrap: anywhere; }
+.admin-result > div { margin-top: 0.8rem; }
+
+@media (max-width: 520px) {
+  .start-wrap h1 { font-size: clamp(2.2rem, 9vw, 3.2rem); }
+  .start-actions .start-button { min-width: 0; }
+  .header-actions { gap: 0.4rem; }
+}
+
 .start-privacy { margin: 0.7rem 0 0; color: var(--faint); font-size: 0.65rem; }
 
 .resume-card {

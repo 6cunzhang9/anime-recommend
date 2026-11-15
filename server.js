@@ -131,7 +131,7 @@ function allowPost(ip) {
 
 function isExportAuthorized(req) {
   const expected = process.env.ADMIN_TOKEN;
-  if (!expected) return true;
+  if (!expected) return false;
 
   const authorization = String(req.headers.authorization || "");
   const supplied = authorization.toLowerCase().startsWith("bearer ")
@@ -428,12 +428,16 @@ async function handleRequest(req, res) {
       sendJson(res, 405, { ok: false, error: "Method not allowed" });
       return;
     }
+    if (!process.env.ADMIN_TOKEN) {
+      sendJson(res, 503, { ok: false, error: "服务端尚未配置 ADMIN_TOKEN" });
+      return;
+    }
     if (!isExportAuthorized(req)) {
       sendJson(res, 401, { ok: false, error: "需要管理员密钥才能导出原始样本" });
       return;
     }
     const format = requestUrl.searchParams.get("format") || "jsonl";
-    if (!["json", "jsonl", "csv"].includes(format)) {
+    if (!["summary", "json", "jsonl", "csv"].includes(format)) {
       sendJson(res, 400, { ok: false, error: "Unsupported export format" });
       return;
     }
@@ -450,6 +454,13 @@ async function handleRequest(req, res) {
     if (format === "csv") {
       body = V4.flattenForCsv(records, reactions);
       contentType = "text/csv; charset=utf-8";
+    } else if (format === "summary") {
+      body = JSON.stringify({
+        exported_at: new Date().toISOString(), ...V4.summarize(records),
+        ratings: ratings.length, recommendation_feedback: reactions.length
+      }, null, 2);
+      contentType = "application/json; charset=utf-8";
+      extension = "json";
     } else if (format === "json") {
       body = JSON.stringify({
         exported_at: new Date().toISOString(),

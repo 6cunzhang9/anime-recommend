@@ -11,7 +11,9 @@ export default async function handler() {
     service: "anime-soul-lab",
     questionnaireVersion: "4.0.0",
     storage: "netlify-blobs",
-    adminAuth: true,
+    adminAuth: Boolean(process.env.ADMIN_TOKEN),
+    accounts: true,
+    externalSearch: true,
     time: new Date().toISOString()
   });
 }

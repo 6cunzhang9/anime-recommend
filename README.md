@@ -5,49 +5,27 @@
 - **40 道固定题目**：严格按 v4 规格，没有注意力题、反向陷阱或认真作答阻断。
 - **真实喜欢作品是主锚点**：q40 支持 1–5 部作品、喜欢强度、理由标签和文字；匹配失败也保留原题名。
 - **画像与推荐分层**：原始答案、派生画像、作品锚点、评价、短期观看状态、推荐快照分开保存。
-- **树洞**：我的档案、番剧清单/搜索、评价、推荐反馈、历史档案、数据包导出。
-- **管理员数据研究室**：只通过 `?admin=1` 显示入口，且导出仍需 `ADMIN_TOKEN`；普通用户数据导出在树洞内。
-- **可部署**：静态页面 + Netlify Functions + Netlify Blobs；本地 Node 服务零依赖。
-
-## 先说清楚的边界
-
-1. 本问卷不是临床、人格或能力测评。q05–q08 只是低权重自述，不生成诊断，也不主导推荐。
-2. 现有项目没有账户体系，因此：
-   - **个人历史、评价、草稿默认保存在本机**；换浏览器/清缓存会丢失。
-   - 服务器只能聚合匿名反馈和评价，不能按个人登录账号取回历史。
-   - 用户删除本机数据不会删除服务器上的匿名快照；服务器清理需要管理员流程。
-3. 没有配置完整的第三方番剧目录。搜索只覆盖当前 148 部候选快照；未匹配作品可保存原题名和 `unmatched` 状态，不阻塞提交。外部作品适配器的统一接口和重试路径已经体现在数据结构中，但没有凭证/授权时不伪造匹配。
-4. “相似画像”和“树洞高评价”区块只在匿名样本达到阈值时出现；不足时整块隐藏。当前代码不对普通用户展示其他人的原始答案、ID、理由原文或时间戳。
-5. 推荐权重是**初始可配置值，未经大样本验证**。请把结果当作可解释的初始排序，而不是已验证的统计模型。
+- **树洞**：登录后发布的评价统一匿名公开。一次测评对应一条本命番发言。
+- **云端账号**：用用户名和密码注册。完成问卷后，画像、推荐链接、评价和反馈按账号保存在 Netlify Blobs；换设备登录即可取回。
+- **社区加推**：核心推荐之后最多增加一部，优先使用相似口味用户共同选择的本命番，再考虑树洞好评。
+- **作品搜索**：按需使用 Bangumi，结果只在保存相关问卷或评价时留下作品引用。
 
 ## 快速开始
 
-### 直接打开
+### 本机体验
 
-双击 `index.html`。不需要安装依赖；数据、评价和最近结果保存在当前浏览器。
+使用 Node.js 20 运行 `npm start`，访问 <http://127.0.0.1:4173>。也可直接打开 `index.html`。本地 Node 服务保留 JSONL 样本模式，完整云端流程使用 Netlify Functions。
 
-### 本地收集服务
-
-需要 Node.js 18+：
+### 测试云端流程
 
 ```bash
-cd anime-soul-lab
-npm start
-```
-
-打开 <http://127.0.0.1:4173>。
-
-本地数据文件：
-
-- `data/responses.jsonl`：v4 问卷（旧 v2/v3 行如果存在，会原样保留）
-- `data/reactions.jsonl`：推荐反馈事件
-- `data/ratings.jsonl`：树洞评价事件
-
-只检查语法：
-
-```bash
+npm ci
 npm run check
+npm run build:netlify
+npx netlify-cli dev --dir .
 ```
+
+使用 Netlify Dev 提供的 URL 测试账号、搜索和树洞。将 `ADMIN_TOKEN` 设为本地环境变量以验证管理员导出。
 
 ## 40 题结构（严格按执行规格）
 
@@ -120,192 +98,49 @@ Score =
 - 每张卡显示匹配指数、外部链接、来源标签、2–4 条理由、维度拆分和“为什么不是其他候选”的说明。
 - 排名会做候选簇多样性重排，避免少数“万能作品”占据所有用户的前三。
 
-## 树洞
+## 树洞与外部作品
 
-入口在首页和页头。树洞内有：
+- 「社区发言」可按作品名筛选本命番与番剧评价。第 40 题的作品、喜欢程度与理由会合在同一条匿名发言里；前 39 题、派生画像和推荐快照留在个人档案。写评价同样匿名公开，作者可以编辑或删除。
+- 第 40 题和写评价共用作品搜索，唯一确定的全名或已知简称会自动匹配，存在歧义时可选条目或保留原题名。支持按中文或原名搜索 [Bangumi](https://github.com/bangumi/api)。接口超时会显示本地候选，手填题名会留下 Bangumi 搜索链接。
+- 核心推荐沿用精选候选、描述和封面。保存的推荐快照包含作品链接，访问历史档案可直接打开作品页。
+- 相似推荐以题材、追看驱动、人物关系和主题为主，四项性格自述占较低权重。出现在相似推荐中的本命番至少来自两份独立的同意样本。树洞好评同时考虑负面评价，对小样本分数做收缩。核心推荐和已看作品不会重复加推。
+- 已登录用户可从账号菜单导入本浏览器的 v4 测评档案。旧测评和旧评价保留原有可见范围；已有云端档案优先保留。旧版数据仍可从原浏览器导出。
+- 账号使用 scrypt 加盐散列，登录 Cookie 有效期 30 天。到期可重新登录，已保存数据继续保存在同一 Netlify Blobs store。
 
-- **我的档案**：当前画像、来源题号、真实喜欢作品、评价、明确排斥、可清除的短期观看状态、推荐反馈。
-- **番剧清单**：搜索候选快照、以原题名保存、状态/评分/偏好判断/理由标签/文字评价、编辑和删除。
-- **历史档案**：本机 v4 问卷、旧 v2/v3 档案（原样展示、标记为未收集 v4 字段）、每条完整 JSON、完整数据包导出。
-- **数据与推荐方式**：问卷边界、权重、外部索引限制、相似用户/高评价显示条件、删除方式和导出说明。
+## Netlify 部署
 
-“删除本机数据”清除本机问卷、评价、反馈和草稿，但不删除服务器匿名样本；服务器清理需管理员流程。
+沿用原 GitHub 仓库及已连接的 Netlify 项目。构建命令为 `npm run build:netlify`，发布目录为 `dist`，Functions 目录为 `netlify/functions`，详见 `netlify.toml`。
 
-### 数据包
+在原 Netlify 项目的 **Project configuration → Environment variables** 保留 `ADMIN_TOKEN`，并确认该变量对 Functions 可用。继续使用原 `BLOBS_STORE_NAME`、`BLOBS_REGION`（如已配置），以继承已有匿名问卷、评价和反馈。推送到 Netlify 所监控的 GitHub 分支后会触发构建。
 
-树洞导出的 JSON 包含：
+部署后，页面底部点击「管理员」，使用账号 `admin` 和原 `ADMIN_TOKEN` 登录。管理员主页可搜索测评、查看画像与推荐快照、隐藏或恢复发言，以及下载汇总 JSON、完整 JSON 和问卷 CSV。完整 JSON 包含问卷、评价和推荐反馈。导出接口兼容原有 Bearer 密钥及旧 JSONL 样本格式。账号口令和会话数据不进入数据导出。
 
-- 本机 v4 问卷、旧 v2/v3 档案；
-- 原始答案、派生画像、锚点、评价、推荐反馈；
-- 当前推荐快照和草稿；
-- schema、导出时间和字段说明。
+### 存储格式
 
-## 外部作品引用
+每次测评或评价只写入一条账号记录。发言由记录生成，编辑和管理状态随同一条记录更新。新版记录只保存一份第 40 题作品和作品引用，保留最多 5 份先前推荐快照。读取时还原已有 API 和导出所用的 v4 字段。旧记录可以直接读取。
 
-当前适配器行为：
+### API
 
-- 搜索范围：`catalog.js` 中经口碑筛选的 148 部候选快照；
-- 匹配成功：保存 `provider="anilist-candidate-snapshot"`、`provider_id`、`canonical_url`、`title_canonical`、`media_type`、`lookup_status="matched"`、`resolved_at`；
-- 匹配失败：仍可保存，使用 `provider="manual"`、`lookup_status="unmatched"`，保留原始题名；
-- 不下载完整番剧目录，不批量镜像评论、角色或全量外部数据。
+| 路由 | 用途 |
+| --- | --- |
+| `GET /api/health` | 检测服务与功能可用性 |
+| `GET /api/anime-search?q=...` | 按题名查询 Bangumi |
+| `GET /api/account` | 获取当前账号的档案、评价与反馈 |
+| `POST /api/account` | 注册、登录、登出 |
+| `POST /api/responses` | 保存问卷及推荐快照 |
+| `POST /api/reactions` | 保存推荐反馈 |
+| `POST /api/ratings` | 保存、发布或删除评价 |
+| `GET /api/reviews` | 查询公开评价与测评本命番 |
+| `POST /api/community` | 获取相似作品与树洞好评候选 |
+| `GET /api/admin` / `POST /api/admin` | 查看测评、管理发言 |
+| `GET /api/export?format=summary` | 使用 `ADMIN_TOKEN` 导出汇总 |
 
-没有可靠网络/凭证时，产品显示“无法自动匹配，可保存原题名”，不编造匹配结果。
+### 上线验收
 
-## 本地与 Netlify API
-
-| 方法 | 路径 | 说明 |
-| --- | --- | --- |
-| `GET` | `/api/health` | 服务状态与存储类型 |
-| `POST` | `/api/responses` | 保存 v4 问卷；服务端校验必答、枚举、上限、排序、q40 |
-| `POST` | `/api/reactions` | 保存推荐反馈（想看/喜欢/一般/没兴趣/不适合/已看） |
-| `POST` | `/api/ratings` | 保存树洞评价（匿名使用开启时才提交服务器） |
-| `POST` | `/api/community` | 聚合匿名相似画像与树洞高评价；不足时返回可见的“不展示”原因 |
-| `GET` | `/api/stats` | 管理员统计 |
-| `GET` | `/api/export?format=jsonl` | 管理员导出；支持 `json`、`jsonl`、`csv` |
-
-管理员导出：
-
-- JSON：完整 v4 问卷、旧档案、反馈、评价；
-- CSV：一行一份问卷，包含 q40 摘要、三部推荐及反馈、同意状态；旧档案兼容；
-- 原始导出必须带 `ADMIN_TOKEN`。
-
-## 部署到 Netlify
-
-### 架构
-
-```text
-静态页面 + 本地封面 → Netlify CDN（dist/）
-POST /api/responses  → Function → Netlify Blobs（responses/）
-POST /api/reactions  → Function → Netlify Blobs（reactions/）
-POST /api/ratings    → Function → Netlify Blobs（ratings/）
-POST /api/community  → Function → 匿名聚合，不返回个人原始数据
-GET  /api/export     → 管理员，ADMIN_TOKEN
-```
-
-### 首次部署
-
-1. 本地验证：
-
-```bash
-npm install
-npm run check
-npm run build:netlify
-```
-
-2. 推送 Git：
-
-```bash
-git init
-git add .
-git commit -m "Deploy anime soul lab v4"
-git remote add origin <你的仓库地址>
-git push -u origin main
-```
-
-3. 在 Netlify 导入仓库。`netlify.toml` 已指定：
-   - Build command：`npm run build:netlify`
-   - Publish directory：`dist`
-   - Functions directory：`netlify/functions`
-   - Node：20（`NODE_VERSION=20`）
-
-4. 环境变量：
-
-| 变量 | 必填 | 说明 |
-| --- | --- | --- |
-| `ADMIN_TOKEN` | 是 | 管理员原始导出密钥 |
-| `BLOBS_REGION` | 否 | 默认 `ap-southeast-1` |
-| `BLOBS_STORE_NAME` | 否 | 默认 `anime-soul-responses` |
-
-```bash
-node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
-```
-
-5. 管理员入口：在网站 URL 后加 `?admin=1`（或 `#admin`），页脚会出现“管理员导出”；普通页面不显示此入口，且仍然需要 `ADMIN_TOKEN`。
-
-> 不要只拖拽 `dist/`：Functions 不会部署，`/api/*` 会 404。
-
-### 如何把版本更新同步到 Netlify
-
-如果 Netlify 已经连接本仓库（当前仓库远程为 GitHub 的 `anime-recommend`，分支 `main`），在本地执行：
-
-```powershell
-cd "C:\Users\CunZhang.DESKTOP-4T3P5LI\Downloads\anime-soul-lab"
-
-npm run check
-npm run build:netlify
-
-git add -A
-git commit -m "Update to v4: 40-question aesthetic questionnaire and tree hollow"
-git push origin main
-```
-
-然后：
-
-1. 打开 Netlify 项目的 **Deploys**，等待最新构建变为 **Published**；
-2. 打开线上域名，强制刷新（Ctrl/Cmd + Shift + R）；
-3. 验证：
-   - 首页显示 40 道题；
-   - q13/q18/q23/q28 排序、q39 矩阵、q40 多作品可正常操作；
-   - 提交后 `/api/health` 显示 `storage: "netlify-blobs"`；
-   - 结果页每张卡有外部链接、理由和反馈；
-   - 树洞和 `?admin=1` 管理员导出正常。
-
-如果 Netlify 不是通过 Git 而是手动部署：
-
-```bash
-npm install -g netlify-cli
-netlify login
-netlify link
-netlify deploy --build --prod
-```
-
-或者把仓库重新连接到 Netlify，以后直接 `git push`。
-
-**数据不会因重新部署被删除**：Blobs 中的问卷、反馈、评价会保留；`ADMIN_TOKEN` 也不需要重设。旧 v2/v3 记录会继续出现在管理员导出中，并保留原版本字段。
-
-## 文件结构
-
-```text
-anime-soul-lab/
-├─ index.html                开始页、40 题、q40、结果、树洞、管理员弹窗
-├─ styles.css                白色极简视觉与响应式
-├─ app.js                    问卷流程、画像、推荐、树洞、反馈、导出
-├─ test-data.js              严格 v4 的 40 题定义与选项代码
-├─ v4-validation.js          服务端使用的问卷/反馈/评价/导出校验
-├─ catalog.js                148 部候选快照与口碑数据
-├─ media-assets.js           本地封面路径 + 一句剧情简介
-├─ assets/covers/            150 张本地封面
-├─ server.js                 本地静态服务与 API
-├─ netlify.toml              Netlify 构建/缓存/安全头
-├─ netlify/functions/        health / responses / reactions / ratings / community / stats / export
-├─ netlify/shared/           Blobs 访问、管理员鉴权、v4 校验桥接
-├─ scripts/                  候选/封面生成与 Netlify 静态构建
-├─ data/                     本地 JSONL（被 .gitignore 忽略）
-└─ README.md
-```
-
-## 手工验收清单
-
-1. 新用户可完成 q01–q40；q40 是最后一题，没有注意力/认真验证题。
-2. 必答、多选上限、排序无重复、q39 三组、q40 理由和 `reason_other` 都校验。
-3. q40 填一部无法匹配的作品仍能提交，原题名、理由和 `unmatched` 状态在档案与导出中可见。
-4. 树洞可搜索候选快照、保存原题名评价、刷新后仍能看到外部链接/评价。
-5. 结果页每张卡有外部链接、来源标签、至少两条可追溯理由和反馈操作。
-6. 明确不喜欢/不适合不会轻易再次出现在前排；q40 已喜欢作品不会当作“新推荐”。
-7. 相似画像和树洞高评价在同意/样本阈值不足时隐藏，不泄露其他用户信息。
-8. 树洞包含档案、番剧清单/评价、历史档案和数据包；管理员导出只在 `?admin=1` 入口出现。
-9. 数据包可导出本机 v4、旧 v2/v3、评价、反馈和推荐快照。
-10. 同一输入、算法版本与配置版本重复计算时排序可重现。
-
-## 已知限制
-
-- 没有账户系统：个人历史是本机数据；无法按账户取回服务器历史。
-- 外部搜索只覆盖候选快照，不是完整番剧目录。
-- 候选描述是从标签、制作信息和口碑快照派生的，不是人工逐部审核的完整作品向量。
-- 推荐权重初始未校准；`rec-v4.0.0-initial` 的可解释性优先于统计最优。
-- 相似画像/树洞高评价需要实际的匿名样本与评价量；小样本时隐藏，不能用演示数据伪造。
-- 用户删除本机数据不会删除服务器匿名样本；管理员清理需后续后台流程。
-- 封面来自 AniList 公开封面地址并本地缓存；版权归原作者及权利方所有。
+1. 用两个浏览器登录不同账号，确认各自只能看到自己的私有档案。
+2. 搜索一部作品并发布评价，确认游客可见。管理员隐藏后验证游客不可见，恢复后验证重新显示。
+3. 使用简称填写第 40 题并提交，确认只生成一条本命番发言，且游客看不到画像和推荐。重新登录后可打开保存的作品链接；样本足够时应出现一部社区加推。
+4. 在管理员入口分别使用错误和正确的密码，确认下载权限及汇总字段。
 
 ## 参考
 

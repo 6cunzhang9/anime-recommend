@@ -1,6 +1,7 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { getStore } from "@netlify/blobs";
 import v4 from "../../v4-validation.js";
+import { unpackRecord } from "./records.mjs";
 
 const STORE_NAME = process.env.BLOBS_STORE_NAME || "anime-soul-responses";
 const STORE_REGION = process.env.BLOBS_REGION || "ap-southeast-1";
@@ -58,76 +59,69 @@ export function checkAdmin(req) {
   return { ok: true };
 }
 
-export function responseKey(id) {
-  return `${KEY_PREFIX}${id}.json`;
+function scope(prefix, owner) {
+  return owner ? `${prefix}${owner}/` : prefix;
 }
 
-export async function getRecord(id) {
-  const store = getResponsesStore();
-  return store.get(responseKey(id), { type: "json", consistency: "strong" });
+export function responseKey(id, owner) {
+  return `${scope(KEY_PREFIX, owner)}${id}.json`;
 }
 
-export async function readAllRecords() {
+export async function getRecord(id, owner) {
+  return unpackRecord(await getResponsesStore().get(responseKey(id, owner), { type: "json" }));
+}
+
+async function readEntries(prefix, owner, { publicOnly = false } = {}) {
   const store = getResponsesStore();
-  const { blobs } = await store.list({ prefix: KEY_PREFIX });
+  const listing = await store.list({ prefix: scope(prefix, owner) });
+  const blobs = publicOnly
+    ? listing.blobs.filter(({ key }) => key.slice(prefix.length).includes("/"))
+    : listing.blobs;
   const records = [];
   const batchSize = 20;
-
   for (let index = 0; index < blobs.length; index += batchSize) {
     const batch = blobs.slice(index, index + batchSize);
-    const values = await Promise.all(
-      batch.map((blob) => store.get(blob.key, { type: "json", consistency: "strong" }))
-    );
-    values.forEach((record) => {
-      if (record && typeof record === "object") records.push(record);
-    });
+    const values = await Promise.all(batch.map(async ({ key }) => {
+      const record = unpackRecord(await store.get(key, { type: "json" }));
+      if (!record || typeof record !== "object") return null;
+      const parts = key.slice(prefix.length).split("/");
+      const depth = prefix === REACTION_PREFIX ? 3 : 2;
+      if (parts.length === depth && /^[a-f0-9]{32}$/.test(parts[0])) {
+        Object.defineProperty(record, "accountOwner", { value: parts[0] });
+      }
+      return record;
+    }));
+    records.push(...values.filter(Boolean));
   }
-
-  return records.sort((a, b) => String(a.receivedAt || "").localeCompare(String(b.receivedAt || "")));
+  return records;
 }
 
-export function reactionKey(responseId, animeId) {
-  return `${REACTION_PREFIX}${responseId}/${animeId}.json`;
+export async function readAllRecords(owner, options) {
+  const records = await readEntries(KEY_PREFIX, owner, options);
+  return records.sort((a, b) => String(a.submitted_at || a.receivedAt || "").localeCompare(String(b.submitted_at || b.receivedAt || "")));
 }
 
-export function ratingKey(id) {
-  return `${RATING_PREFIX}${id}.json`;
-}
-
-export async function readAllRatings() {
+export async function deleteResponse(id, owner) {
   const store = getResponsesStore();
-  const { blobs } = await store.list({ prefix: RATING_PREFIX });
-  const ratings = [];
-  const batchSize = 25;
-  for (let index = 0; index < blobs.length; index += batchSize) {
-    const batch = blobs.slice(index, index + batchSize);
-    const values = await Promise.all(
-      batch.map((blob) => store.get(blob.key, { type: "json", consistency: "strong" }))
-    );
-    values.forEach((rating) => {
-      if (rating && typeof rating === "object") ratings.push(rating);
-    });
-  }
-  return ratings;
+  await store.delete(responseKey(id, owner));
+  const { blobs } = await store.list({ prefix: `${scope(REACTION_PREFIX, owner)}${id}/` });
+  await Promise.all(blobs.map(({ key }) => store.delete(key)));
 }
 
-export async function readAllReactions() {
-  const store = getResponsesStore();
-  const { blobs } = await store.list({ prefix: REACTION_PREFIX });
-  const reactions = [];
-  const batchSize = 25;
+export function reactionKey(responseId, animeId, owner) {
+  return `${scope(REACTION_PREFIX, owner)}${responseId}/${encodeURIComponent(animeId)}.json`;
+}
 
-  for (let index = 0; index < blobs.length; index += batchSize) {
-    const batch = blobs.slice(index, index + batchSize);
-    const values = await Promise.all(
-      batch.map((blob) => store.get(blob.key, { type: "json", consistency: "strong" }))
-    );
-    values.forEach((reaction) => {
-      if (reaction && typeof reaction === "object") reactions.push(reaction);
-    });
-  }
+export function ratingKey(id, owner) {
+  return `${scope(RATING_PREFIX, owner)}${id}.json`;
+}
 
-  return reactions;
+export function readAllRatings(owner, options) {
+  return readEntries(RATING_PREFIX, owner, options);
+}
+
+export function readAllReactions(owner) {
+  return readEntries(REACTION_PREFIX, owner);
 }
 
 export function recordsToCsv(records, reactions = []) {
