@@ -2,6 +2,8 @@ import v4 from "../../v4-validation.js";
 import { checkCanPublish } from "../shared/members.mjs";
 import { checkAccountContext, digest, getUser, keyPart, readJson, RequestError } from "../shared/auth.mjs";
 import { errorResponse, getResponsesStore, jsonResponse, ratingKey } from "../shared/store.mjs";
+import { watchedWork } from "../shared/watchlist.mjs";
+import { seriesFor } from "../shared/work-search.mjs";
 import { changeEntry, packRating, publicationFor } from "../shared/records.mjs";
 import { ValidationError, validateRating } from "../shared/validation.mjs";
 
@@ -40,12 +42,21 @@ export default async function handler(req) {
 
     rating.id = editing ? rating.id : digest(`${user.id}:${v4.workIdentity(rating.external_ref)}`);
     const key = ratingKey(rating.id, user.id);
+    const ref = rating.external_ref;
+    const [watched, data] = await Promise.all([watchedWork(user.id, ref),
+      ref.provider === "bangumi" && !ref.series_id ? seriesFor(ref.provider_id).catch(() => null) : null]);
+    if (data?.items.length) {
+      ref.series_id = data.series?.id || data.root?.provider_id || ref.provider_id;
+      ref.series_title = data.series?.title || data.root?.title_display || ref.title_display;
+    }
     const result = await changeEntry(store, key, (previous) => {
       if (editing && !previous) return null;
       const publication = publicationFor(previous || {}) || {
         published_at: rating.received_at, moderated: false
       };
-      return packRating({ ...rating, external_ref: previous?.external_ref || rating.external_ref,
+      return packRating({ ...rating, external_ref: editing && previous
+        ? { ...previous.external_ref, ...(ref.series_id && { series_id: ref.series_id, series_title: ref.series_title }) } : ref,
+        watched: watched || previous?.watched === true,
         created_at: previous?.created_at || rating.received_at,
         updated_at: rating.received_at,
         anonymous_use: Boolean(publication), public_review: Boolean(publication),

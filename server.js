@@ -18,6 +18,7 @@ const STATIC_FILES = new Map([
   ["/taste-analysis.js", { file: "taste-analysis.js", type: "text/javascript; charset=utf-8" }],
   ["/series-data.js", { file: "series-data.js", type: "text/javascript; charset=utf-8" }],
   ["/watch-model.js", { file: "watch-model.js", type: "text/javascript; charset=utf-8" }],
+  ["/photo-search.js", { file: "photo-search.js", type: "text/javascript; charset=utf-8" }],
   ["/experience.js", { file: "experience.js", type: "text/javascript; charset=utf-8" }],
   ["/app.js", { file: "app.js", type: "text/javascript; charset=utf-8" }],
   ["/test-data.js", { file: "test-data.js", type: "text/javascript; charset=utf-8" }],
@@ -31,7 +32,7 @@ const securityHeaders = {
   "Referrer-Policy": "no-referrer",
   "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
   "Content-Security-Policy":
-    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://s4.anilist.co; connect-src 'self'; font-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://s4.anilist.co https://lain.bgm.tv; connect-src 'self'; font-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
 };
 
 function setHeaders(res, headers = {}) {

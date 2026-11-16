@@ -1,6 +1,7 @@
 import watch from "../../watch-model.js";
 import { getUser, readJson, RequestError } from "../shared/auth.mjs";
 import { animeRelations, getAnime, searchAnime } from "../shared/bangumi.mjs";
+import { discoverySignals, isAvoided, scoreWork } from "../shared/discovery-signals.mjs";
 import { postFromRecord, readPostRecords } from "../shared/posts.mjs";
 import { defaultTags, proposalKey } from "../shared/review-tags.mjs";
 import { listWatchlist } from "../shared/watchlist.mjs";
@@ -9,8 +10,7 @@ import { errorResponse, getResponsesStore, jsonResponse, readAllRecords } from "
 export const config = { path: "/api/discover", method: "POST",
   rateLimit: { action: "rate_limit", aggregateBy: "ip", windowSize: 60, windowLimit: 12 } };
 
-const testTags = { set_fantasy: "奇幻", set_scifi: "科幻", set_history: "历史", set_everyday: "日常",
-  set_school_youth: "校园", set_mystery_urban: "悬疑", set_music_stage: "音乐", set_adventure_conflict: "冒险" };
+const recentYear = 2012;
 const axes = Object.keys(watch.criteria);
 const matchesTag = (item, tag) => item.features.some((value) => watch.normalize(value) === watch.normalize(tag));
 const rollup = (value) => Math.round(value * 10) / 10;
@@ -115,13 +115,13 @@ function listedWorks(entries) {
   return { ids, has(item) {
     if (ids.has(item.provider_id)) return true;
     const titles = [item.title_display, item.title_canonical].map(watch.normalize).filter(Boolean);
-    return aliases.some(({ year, names }) => (!year || !item.year || year === item.year) && titles.some((title) => names.includes(title)));
+    return aliases.some(({ year, names }) => (!year || !item.year || Number(year) === Number(item.year)) && titles.some((title) => names.includes(title)));
   } };
 }
 
 export default async function handler(req) {
   try {
-    const settings = await readJson(req, 4500);
+    const settings = await readJson(req, 10000);
     if (!settings || typeof settings !== "object" || Array.isArray(settings)) return errorResponse(400, "找番筛选无效");
     const user = await getUser(req);
     const minScore = optionalNumber(settings.scoreMin, 0, 10, "Bangumi 最低评分");
@@ -139,16 +139,10 @@ export default async function handler(req) {
       useCommunity ? matchingPublicWorks(user, conditions, selected) : null
     ]);
     const stats = watch.tastes(saved);
-    const dimensions = profile?.analysis?.dimensions || {};
-    const testFeatures = [
-      ...(profile?.answers?.q09 || []).map((value) => testTags[value]).filter(Boolean),
-      ...watch.preferenceTags(profile?.preferences),
-      ...(dimensions.humor >= 75 ? ["喜剧"] : []), ...(dimensions.romance >= 75 ? ["恋爱"] : []),
-      ...(dimensions.experiment >= 75 ? ["实验"] : []), ...(dimensions.music >= 75 ? ["音乐"] : []),
-      ...(dimensions.atmosphere >= 75 ? ["治愈", "日常"] : []), ...(dimensions.spectacle >= 75 ? ["动作", "运动"] : [])
-    ];
-    const features = watch.tags([...stats.topTags, ...testFeatures], 20);
-    const liked = new Set(features.map(watch.normalize));
+    const assessment = settings.assessment;
+    const answers = assessment?.answers || profile?.answers;
+    const signals = discoverySignals(answers, assessment?.preferences || profile?.preferences, stats);
+    const features = signals.map(({ tag }) => tag);
     const reasons = new Set(watch.tags([...stats.topReasons,
       ...(profile?.actual_favorites || []).flatMap((item) => item.review?.tags || [])], 20).map(watch.normalize));
     const theme = watch.tags([settings.theme], 1)[0] || "";
@@ -160,6 +154,8 @@ export default async function handler(req) {
     if (scores.length) filter.rating = scores;
     const dates = [...(start === null ? [] : [`>=${start}-01-01`]), ...(end === null ? [] : [`<=${end}-12-31`])];
     if (dates.length) filter.air_date = dates;
+    const limitedToRecent = start === null && (end === null || end >= recentYear) && !wantsExtras;
+    const recentFilter = limitedToRecent ? { ...filter, air_date: [...dates, `>=${recentYear}-01-01`] } : filter;
     if (rare || popular) filter.rating_count = rare ? [">=1", "<=4500"] : [">4500"];
 
     const mode = settings.mode === "different" ? "different" : "similar";
@@ -167,14 +163,19 @@ export default async function handler(req) {
     const useType = ["ordinary", "movie"].includes(settings.type);
     const requests = [];
     if (!useCommunity && !wantsExtras) {
-      requests.push(searchAnime("", { filter, sort, limit: 40 }));
-      if (useType || maxScore !== null || theme) requests.push(searchAnime("", { filter, sort, limit: 40, offset: 40 }));
+      requests.push(searchAnime("", { filter: recentFilter, sort, limit: 40 }));
+      if (useType || maxScore !== null || theme) requests.push(searchAnime("", { filter: recentFilter, sort, limit: 40, offset: 40 }));
       if (!theme && mode === "similar") {
-        for (const tag of features.slice(0, 2)) requests.push(searchAnime("", { filter: { ...filter, tag: [tag] }, sort, limit: 25 }));
+        for (const tag of features.slice(0, 3)) requests.push(searchAnime("", { filter: { ...recentFilter, tag: [tag] }, sort, limit: 20 }));
+        if (limitedToRecent && features.length >= 3) requests.push(searchAnime("", {
+          filter: { ...filter, air_date: [`<${recentYear}-01-01`], tag: features.slice(0, 2) }, sort: "score", limit: 12
+        }));
       }
     }
     const wantedWorks = listedWorks(saved.filter((item) => item.status === "wanted"));
     const watchedWorks = listedWorks(saved.filter((item) => item.status === "watched"));
+    const favorites = new Set((Array.isArray(assessment?.favorites) ? assessment.favorites : [])
+      .filter((id) => typeof id === "string" && /^\d{1,12}$/.test(id)).slice(0, 8));
     const [search, series] = await Promise.all([
       Promise.allSettled(requests),
       wantsExtras ? watchedRelations(saved) : null
@@ -199,7 +200,8 @@ export default async function handler(req) {
     if (series?.total && !series.checked) return errorResponse(502, "暂时无法读取 Bangumi 系列关系，请稍后重试");
     const candidates = [...candidateMap.values()].filter((item) => {
       const id = item.provider_id;
-      if (watchedWorks.has(item) || settings.queue === "exclude" && wantedWorks.has(item)) return false;
+      if (watchedWorks.has(item) || favorites.has(id) || settings.queue === "exclude" && wantedWorks.has(item)) return false;
+      if (isAvoided(item, answers)) return false;
       if (evidence && !evidence.has(id) || series && !series.extras.has(id)) return false;
       if (settings.type === "movie" && item.media_type !== "movie") return false;
       if (settings.type === "ordinary" && !["tv", "ova", "ona"].includes(item.media_type)) return false;
@@ -208,16 +210,20 @@ export default async function handler(req) {
       if (rare && (item.votes < 1 || item.votes > 4500) || popular && item.votes <= 4500) return false;
       return !dates.length || item.year && (start === null || +item.year >= start) && (end === null || +item.year <= end);
     });
-    return jsonResponse({ ok: true, items: candidates.map((item) => {
-      const overlap = item.features.filter((tag) => liked.has(watch.normalize(tag)));
+    const ranked = candidates.map((item) => {
       const community = evidence?.get(item.provider_id);
+      const { keywords: overlap, fit } = scoreWork(item, signals, community?.tags);
       const reasonMatches = (community?.tags || item.features).filter((tag) => reasons.has(watch.normalize(tag)));
       const wanted = wantedWorks.has(item);
-      const likeness = overlap.length + reasonMatches.length * 0.55;
+      const likeness = fit + reasonMatches.length * 0.55;
       return { ...item, overlap, reasonMatches, wanted, ...(community && { community }),
+        fit, older: limitedToRecent && Number(item.year) < recentYear,
         order: likeness * (mode === "different" ? -1 : 1) + (item.score || 5) * 0.35 };
-    }).sort((a, b) => (settings.queue === "prefer" ? Number(b.wanted) - Number(a.wanted) : 0) ||
-      b.order - a.order || a.provider_id.localeCompare(b.provider_id)).slice(0, 12).map(({ order, ...item }) => item),
+    }).filter((item) => !item.older || Boolean(item.year) && (item.wanted && settings.queue === "prefer" ||
+      mode === "similar" && item.overlap.length >= 3 && item.fit >= 4));
+    ranked.sort((a, b) => (settings.queue === "prefer" ? Number(b.wanted) - Number(a.wanted) : 0) ||
+      Number(a.older) - Number(b.older) || b.order - a.order || a.provider_id.localeCompare(b.provider_id));
+    return jsonResponse({ ok: true, items: ranked.slice(0, 12).map(({ order, fit, ...item }) => item),
     series: series ? { checked: series.checked, total: series.total, watched: series.watched } : null });
   } catch (error) {
     if (error instanceof RequestError) return errorResponse(error.status, error.message);

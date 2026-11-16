@@ -1,7 +1,7 @@
 import watch from "../../watch-model.js";
 import v4 from "../../v4-validation.js";
 import { digest, RequestError } from "../shared/auth.mjs";
-import { userAgent } from "../shared/bangumi.mjs";
+import { getAnime, userAgent } from "../shared/bangumi.mjs";
 import { errorResponse, getResponsesStore, jsonResponse } from "../shared/store.mjs";
 
 export const config = { path: "/api/external-comments", method: "GET",
@@ -26,10 +26,10 @@ function candidates(rows) {
     return common * 2 / (a.size + b.size) >= 0.9;
   };
   for (const row of rows.sort((a, b) => b.likes - a.likes)) {
-    const normalized = watch.normalize(row.text);
+    const clean = row.text.replace(/<[^>]*>/g, " ");
+    const normalized = watch.normalize(clean);
     if (!normalized || row.likes <= 0 || seenUrls.has(row.url) || seenText.has(normalized) || [...seenText].some((previous) => nearlySame(previous, normalized))) continue;
-    const tags = watch.abstract(row.text);
-    if (!tags.length) continue;
+    const tags = watch.abstract(clean);
     seenUrls.add(row.url);
     seenText.add(normalized);
     selected.push({ source: row.source, url: row.url, likes: row.likes, tags });
@@ -40,30 +40,39 @@ function candidates(rows) {
 
 async function kitsu(ref) {
   if (!ref.year) return [];
-  const query = new URLSearchParams({ "filter[text]": ref.title_canonical, "page[limit]": "10" });
-  const result = await fetchJson(`https://kitsu.app/api/edge/anime?${query}`, { Accept: "application/vnd.api+json" });
-  const wanted = new Set([ref.title_canonical, ref.title_display].map(watch.normalize));
-  const matches = (result.data || []).filter(({ id, attributes }) => {
-    const aliases = [attributes?.canonicalTitle, ...Object.values(attributes?.titles || {}), ...(attributes?.abbreviatedTitles || [])];
+  const headers = { Accept: "application/vnd.api+json" };
+  const titles = [...new Set([ref.title_canonical, ref.title_display].filter(Boolean))];
+  const wanted = new Set(titles.map(watch.normalize));
+  const find = async (title) => {
+    const query = new URLSearchParams({ "filter[text]": title, "page[limit]": "10" });
+    const result = await fetchJson(`https://kitsu.app/api/edge/anime?${query}`, headers);
+    return (result.data || []).filter(({ id, attributes }) => {
+    const aliases = [attributes?.canonicalTitle, attributes?.slug, ...Object.values(attributes?.titles || {}), ...(attributes?.abbreviatedTitles || [])];
     return /^\d+$/.test(id) && +String(attributes?.startDate || "").slice(0, 4) === ref.year &&
       aliases.some((title) => wanted.has(watch.normalize(title))) &&
       !attributes?.nsfw && (!["tv", "movie", "ova", "ona"].includes(ref.media_type) || !attributes?.subtype || String(attributes.subtype).toLowerCase() === ref.media_type);
-  });
-  if (matches.length !== 1) return [];
-  const [media] = matches;
-  const reviews = await fetchJson(`https://kitsu.app/api/edge/anime/${media.id}/reviews?sort=-likesCount&page%5Blimit%5D=20`,
-    { Accept: "application/vnd.api+json" });
-  return (reviews.data || []).filter(({ id, attributes }) => /^\d+$/.test(id) && !attributes?.spoiler)
+    });
+  };
+  const attempts = await Promise.allSettled(titles.map(find));
+  if (attempts.every(({ status }) => status === "rejected")) throw attempts[0].reason;
+  const matches = new Set(attempts.flatMap((item) => item.status === "fulfilled" ? item.value.map(({ id }) => id) : []));
+  if (matches.size !== 1) return [];
+  const id = [...matches][0];
+  const filters = new URLSearchParams({ "filter[mediaId]": id, "filter[mediaType]": "Anime", sort: "-likesCount", "page[limit]": "20" });
+  const reviews = await fetchJson(`https://kitsu.app/api/edge/reviews?${filters}`, headers).catch(() =>
+    fetchJson(`https://kitsu.app/api/edge/anime/${id}/reviews?sort=-likesCount&page%5Blimit%5D=20`, headers));
+  return (reviews.data || []).filter(({ id, attributes }) => /^\d+$/.test(id) && !attributes?.spoiler &&
+      typeof (attributes?.content || attributes?.review) === "string")
     .map(({ id, attributes }) => ({
       source: "Kitsu", url: `https://kitsu.app/reviews/${id}`,
-      likes: Number(attributes.likesCount || attributes.upVotesCount || 0), text: attributes.content || attributes.review || ""
+      likes: Number(attributes.likesCount || attributes.likes_count || attributes.upVotesCount || 0), text: attributes.content || attributes.review
     }));
 }
 
 async function bangumi(ref) {
   // The public v0 catalogue has no short-comment feed. A deployment can supply a licensed JSON endpoint.
   const endpoint = process.env.BANGUMI_COMMENT_FEED;
-  if (!endpoint || ref.provider !== "bangumi") return [];
+  if (!endpoint || !["bangumi", "bangumi-series"].includes(ref.provider)) return null;
   const url = new URL(endpoint);
   if (url.protocol !== "https:") return [];
   url.searchParams.set("subject_id", ref.provider_id);
@@ -79,21 +88,27 @@ async function bangumi(ref) {
 export default async function handler(req) {
   try {
     const params = new URL(req.url).searchParams;
-    const ref = v4.validateExternalRef({
+    let ref = v4.validateExternalRef({
       provider: params.get("provider"), provider_id: params.get("id"), title_display: params.get("title"),
       title_canonical: params.get("name"), year: params.get("year"), media_type: params.get("format")
     }, true);
-    const links = ref.provider === "bangumi"
+    if (["bangumi", "bangumi-series"].includes(ref.provider) && (!ref.year || ref.title_canonical === ref.title_display)) {
+      const resolved = await getAnime(ref.provider_id).catch(() => null);
+      if (resolved) ref = v4.validateExternalRef(resolved, true);
+    }
+    const links = ["bangumi", "bangumi-series"].includes(ref.provider)
       ? [{ source: "Bangumi", url: `https://bgm.tv/subject/${ref.provider_id}/comments` }] : [];
     const store = getResponsesStore();
-    const key = `external-insights/${digest(JSON.stringify([ref.provider, ref.provider_id, ref.title_canonical, ref.year, ref.media_type]))}.json`;
+    const key = `external-insights/v2/${digest(JSON.stringify([ref.provider, ref.provider_id, ref.title_canonical, ref.year, ref.media_type]))}.json`;
     const cached = await store.get(key, { type: "json" });
-    if (cached && Date.now() - cached.time < (cached.items.length ? 6 * 3600000 : 20 * 60000)) {
+    if (cached && Date.now() - cached.time < (cached.items.length ? 6 * 3600000 : 5 * 60000)) {
       return jsonResponse({ ok: true, ...cached, links });
     }
     const sources = await Promise.allSettled([bangumi(ref), kitsu(ref)]);
-    const items = candidates(sources.flatMap((item) => item.status === "fulfilled" ? item.value : []));
-    const output = { items: items.length ? items : cached?.items || [], time: Date.now() };
+    const items = candidates(sources.flatMap((item) => item.status === "fulfilled" && item.value ? item.value : []));
+    const unavailable = sources.some(({ status }) => status === "rejected");
+    const previous = unavailable && cached?.items.length && Date.now() - cached.time < 48 * 3600000 ? cached.items : [];
+    const output = { items: items.length ? items : previous, time: Date.now(), unavailable };
     await store.setJSON(key, output);
     return jsonResponse({ ok: true, ...output, links });
   } catch (error) {

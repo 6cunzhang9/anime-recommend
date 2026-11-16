@@ -91,6 +91,9 @@ function validateExternalRef(input, required = false) {
     media_type: ["tv", "movie", "ova", "ona", "unknown"].includes(input.media_type) ? input.media_type : "unknown",
     lookup_status: canonicalUrl ? status : "unmatched",
     resolved_at: input.resolved_at ? ensureDate(input.resolved_at) : null,
+    ...(["bangumi", "bangumi-series"].includes(provider) && /^\d{1,12}$/.test(String(input.series_id || "")) && {
+      series_id: String(input.series_id), series_title: cleanText(input.series_title, 160)
+    }),
     year: /^\d{4}$/.test(String(input.year || "")) ? Number(input.year) : null,
     features: watchModel.tags(input.features, 16)
   };
@@ -338,7 +341,8 @@ function personalityMatch(a, b) {
 }
 
 function groupWork(groups, ref) {
-  const key = normalizeWorkTitle(ref.title_display) || workIdentity(ref);
+  const key = ["bangumi", "bangumi-series"].includes(ref.provider) && ref.provider_id
+    ? workIdentity(ref) : normalizeWorkTitle(ref.title_display) || workIdentity(ref);
   let group = groups.get(key);
   if (!group) {
     group = { ref, votes: new Map() };

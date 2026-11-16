@@ -9,6 +9,7 @@ const STORE_REGION = process.env.BLOBS_REGION || "ap-southeast-1";
 const KEY_PREFIX = "responses/";
 const REACTION_PREFIX = "reactions/";
 const RATING_PREFIX = "ratings/";
+const FORUM_PREFIX = "forum/";
 
 const SECURITY_HEADERS = {
   "X-Content-Type-Options": "nosniff",
@@ -120,6 +121,14 @@ export function ratingKey(id, owner) {
 
 export function readAllRatings(owner, options) {
   return readEntries(RATING_PREFIX, owner, options);
+}
+
+export function forumKey(id, owner) {
+  return `${scope(FORUM_PREFIX, owner)}${id}.json`;
+}
+
+export function readForum(owner) {
+  return readEntries(FORUM_PREFIX, owner);
 }
 
 export function readAllReactions(owner) {

@@ -1,6 +1,6 @@
 import watch from "../../watch-model.js";
 import { checkAccountContext, getUser, readJson, RequestError } from "../shared/auth.mjs";
-import { changeWatchlist, listWatchlist } from "../shared/watchlist.mjs";
+import { changeWatchlist, importWatchlist, listWatchlist } from "../shared/watchlist.mjs";
 import { errorResponse, jsonResponse } from "../shared/store.mjs";
 
 export const config = { path: "/api/watchlist", method: ["GET", "POST"],
@@ -16,6 +16,7 @@ export default async function handler(req) {
     }
     const payload = await readJson(req, 14000);
     checkAccountContext(payload, user);
+    if (payload.action === "import") return jsonResponse({ ok: true, matches: await importWatchlist(user.id, payload.lines, payload.status) });
     return jsonResponse({ ok: true, item: await changeWatchlist(user.id, payload) });
   } catch (error) {
     if (error instanceof RequestError || error.status === 400) return errorResponse(error.status, error.message);

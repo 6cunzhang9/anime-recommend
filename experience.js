@@ -43,6 +43,10 @@
     const entries = Object.entries(values || {});
     const { x = canvas.width / 2, y = canvas.height / 2, size = Math.min(canvas.width, canvas.height) * .30 } = settings;
     if (!settings.overlay) g.clearRect(0, 0, canvas.width, canvas.height);
+    if (settings.surface) {
+      g.fillStyle = settings.surface;
+      g.fillRect(0, 0, canvas.width, canvas.height);
+    }
     if (entries.length < 3) return;
     const points = (scale) => entries.map(([label], i) => {
       const angle = (i * 2 / entries.length - .5) * Math.PI;
@@ -55,7 +59,7 @@
       g.closePath();
     };
     g.save();
-    g.strokeStyle = "#c7d4c7";
+    g.strokeStyle = settings.grid || "#c7d4c7";
     g.lineWidth = 1.5;
     for (const step of [.2, .4, .6, .8, 1]) { path(points(step)); g.stroke(); }
     for (const point of points(1)) {
@@ -63,12 +67,12 @@
     }
     const ratios = entries.map(([, value]) => Math.max(0, Math.min(1, value / max)));
     path(points(ratios));
-    g.fillStyle = "rgba(37,117,90,.28)";
-    g.strokeStyle = "#286f58";
+    g.fillStyle = settings.area || "rgba(37,117,90,.28)";
+    g.strokeStyle = settings.outline || "#286f58";
     g.lineWidth = 3;
     g.fill();
     g.stroke();
-    g.fillStyle = "#263d35";
+    g.fillStyle = settings.label || "#263d35";
     g.font = `${settings.font || 17}px "Microsoft YaHei", sans-serif`;
     g.textAlign = "center";
     g.textBaseline = "middle";
@@ -82,12 +86,16 @@
     node.height = 326;
     node.setAttribute("role", "img");
     node.setAttribute("aria-label", Object.entries(values).map(([name, value]) => `${name} ${value} 分`).join("、"));
-    radar(node, values, max);
+    const dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    const palette = dark ? { surface: "#18221e", grid: "#698179", label: "#e4f0ea",
+      area: "rgba(105,211,163,.35)", outline: "#8ce0b9" } : { surface: "#fbfdfb", label: "#20352c" };
+    radar(node, values, max, { ...palette, font: 21 });
     return node;
   }
 
   function create(deps) {
-    const { state, apiJson, openAccount, showToast, findWorks, renderWorkChoices, workLink, textButton, openTree, sameWork, postCard } = deps;
+    const { state, apiJson, openAccount, showToast, findWorks, renderWorkChoices, expandWorkResults, workLink, externalWorkLink,
+      openWork, reviewWork, openBoard, textButton, sameWork, postCard } = deps;
     const busyButton = (name, run, className) => {
       const button = textButton(name, async () => {
         button.disabled = true;
@@ -212,6 +220,17 @@
       return panel;
     }
 
+    let watchRead;
+    function getWatchlist() {
+      const owner = state.account?.id;
+      if (!watchRead || watchRead.owner !== owner || watchRead.expires < Date.now()) {
+        const pending = { owner, expires: Date.now() + 15000, result: apiJson("/api/watchlist") };
+        watchRead = pending;
+        pending.result.catch(() => { if (watchRead === pending) watchRead = null; });
+      }
+      return watchRead.result;
+    }
+
     async function saveWatch(work, action, extra = {}) {
       let selected = work;
       if (action === "add" && work.provider === "anilist-candidate-snapshot") {
@@ -219,7 +238,9 @@
         selected = lookup.exact || lookup.items.find((item) =>
           Number(item.year) === Number(work.year) && sameWork(work, item)) || work;
       }
-      return accountMutation("/api/watchlist", { work: selected, action, ...extra });
+      const data = await accountMutation("/api/watchlist", { work: selected, action, members: selected.members, ...extra });
+      watchRead = null;
+      return data;
     }
     function wantButton(work) {
       return busyButton("＋ 想看", async (button) => {
@@ -247,116 +268,375 @@
       return article;
     }
 
-    function lookupPanel(pick) {
-      const box = element("section", undefined, "tree-card");
+    function lookupPanel(pick, { mode = false, key = "" } = {}) {
+      const box = element("section", undefined, "tree-card work-search-panel");
       const form = element("form", undefined, "tree-search");
+      const chosen = choice([["title", "片名 / 别称"], ["character", "角色"], ["description", "剧情 / 标签"]]);
       const search = text("input", "", 120);
       search.type = "search";
-      search.placeholder = "在 Bangumi 搜索番剧";
-      search.setAttribute("aria-label", "作品名");
+      search.placeholder = "输入番名或别称";
+      search.setAttribute("aria-label", "搜索内容");
+      chosen.setAttribute("aria-label", "搜索方式");
       const submit = element("button", "搜索", "primary-button");
       const list = element("div", undefined, "tree-search-results");
       const status = element("p", "", "tree-copy");
       status.setAttribute("role", "status");
+      if (mode) form.append(chosen);
       form.append(search, submit);
-      form.addEventListener("submit", async (event) => {
-        event.preventDefault();
-        if (!search.value.trim()) return;
+      let serial = 0;
+      if (key && state.lookupMemory?.[key]) {
+        const remembered = state.lookupMemory[key];
+        search.value = remembered.query;
+        chosen.value = remembered.mode;
+        if (remembered.data) renderWorkChoices(list, remembered.data.items, pick, remembered.data);
+      }
+      chosen.addEventListener("change", () => {
+        search.placeholder = { title: "输入番名或别称", character: "输入角色名", description: "输入剧情线索或标签，例如 校园 治愈" }[chosen.value];
+      });
+
+      async function run() {
+        const query = search.value.trim();
+        const searchMode = chosen.value;
+        if (!query) { search.focus(); return; }
+        const generation = ++serial;
         submit.disabled = true;
         list.replaceChildren();
         status.textContent = "正在搜索…";
-        try {
-          const data = await findWorks(search.value.trim(), "remote");
-          status.textContent = data.items.length ? "" : data.fallback ? "Bangumi 暂时不可用。" : "未找到相关作品。";
+        const display = (data) => {
+          if (!box.isConnected || generation !== serial || search.value.trim() !== query || chosen.value !== searchMode) return;
+          if (key) {
+            state.lookupMemory ||= {};
+            state.lookupMemory[key] = { query, mode: searchMode, data };
+          }
+          list.replaceChildren();
+          status.textContent = data.items.length ? "" : data.fallback ? "作品索引暂时忙，请稍后重试。" : "未找到相关作品。";
           renderWorkChoices(list, data.items, pick, data);
+        };
+        try {
+          const data = await findWorks(query, searchMode);
+          display(data);
+          if (searchMode === "title") expandWorkResults(data).then((grouped) => { if (grouped !== data) display(grouped); });
         } catch (error) { status.textContent = error.message; }
-        finally { submit.disabled = false; }
+        finally { if (generation === serial) submit.disabled = false; }
+      }
+
+      if (key) search.addEventListener("input", () => {
+        state.lookupMemory ||= {};
+        const remembered = state.lookupMemory[key];
+        if (!remembered || remembered.query !== search.value.trim()) state.lookupMemory[key] = { query: search.value, mode: chosen.value };
       });
+      form.addEventListener("submit", (event) => { event.preventDefault(); run(); });
       box.append(form, status, list);
+      return { node: box, searchBy: (query, mode = "title") => { search.value = query; chosen.value = mode; return run(); } };
+    }
+
+    function importTitles(input, filename = "") {
+      if (/\.json$/i.test(filename)) {
+        const data = JSON.parse(input);
+        const rows = Array.isArray(data) ? data : data.items || data.data;
+        if (!Array.isArray(rows)) throw new Error("JSON 文件应包含作品列表。");
+        return rows.map((value) => typeof value === "string" ? value
+          : value?.work?.title_display || value?.subject?.name_cn || value?.subject?.name || value?.title || value?.name_cn || value?.name);
+      }
+      if (/\.csv$/i.test(filename)) {
+        const rows = input.replace(/^\uFEFF/, "").split(/\r?\n/).filter((line) => line.trim()).map((line) =>
+          (line.match(/"(?:[^"]|"")*"|[^,]+|(?<=,)(?=,)/g) || []).map((cell) => cell.replace(/^"|"$/g, "").replace(/""/g, '"').trim()));
+        const header = rows[0]?.findIndex((cell) => /^(title|title_display|name_cn|name|作品名|番名|标题|番剧)$/i.test(cell));
+        return header >= 0 ? rows.slice(1).map((row) => row[header]) : rows.map((row) => row[0]);
+      }
+      return input.split(/[\r\n、；;]+/).flatMap((line) => {
+        const titles = [...line.matchAll(/《([^》]+)》/g)].map((match) => match[1]);
+        if (titles.length) return titles;
+        return [line.replace(/^\s*(?:[-*•]\s*|\d+[.、)]\s*)/, "")
+          .replace(/^\s*(?:我)?(?:已经看过|看过|看完了?|追过|想看|待追|已追)\s*[：:]?\s*/, "").replace(/[。！？!?]$/, "")];
+      });
+    }
+
+    function watchImport(status, refresh) {
+      const box = element("details", undefined, "tree-card watch-import");
+      box.append(element("summary", "批量导入"));
+      const content = text("textarea", "", 15000);
+      content.rows = 4;
+      content.placeholder = "每行填一部作品，例如 中二病一";
+      const file = element("input");
+      file.type = "file";
+      file.accept = ".txt,.csv,.json,text/plain,text/csv,application/json";
+      const feedback = element("p", "", "tree-copy");
+      feedback.setAttribute("role", "status");
+      const unresolved = element("div", undefined, "post-list");
+      let results = [];
+      const start = busyButton("开始匹配并加入", async () => {
+        const selectedFile = file.files?.[0];
+        if (selectedFile?.size > 350000) throw new Error("请导入小于 350 KB 的文件。");
+        const source = selectedFile ? await selectedFile.text() : content.value;
+        const terms = [...new Set(importTitles(source, selectedFile?.name).filter((title) => typeof title === "string")
+          .map((title) => title.trim()).filter((title) => title && title.length <= 120))];
+        if (!terms.length || terms.length > 120) throw new Error("每次可导入 1–120 条作品名。");
+        const owner = state.account?.username;
+        results = [];
+        unresolved.replaceChildren();
+        for (let i = 0; i < terms.length; i += 8) {
+          if (state.account?.username !== owner) return;
+          feedback.textContent = `已处理 ${i}/${terms.length}…`;
+          try {
+            const data = await accountMutation("/api/watchlist", { action: "import", status, lines: terms.slice(i, i + 8) });
+            results.push(...data.matches);
+          } catch {
+            results.push(...terms.slice(i, i + 8).map((input) => ({ input, items: [], retry: true })));
+          }
+        }
+        const pending = results.filter((row) => !row.item);
+        feedback.textContent = `已确认 ${results.length - pending.length} 条 · ${pending.length} 条待确认`;
+        for (const row of pending) {
+          const card = element("section", undefined, "tree-card");
+          card.append(element("h3", row.input));
+          const picker = lookupPanel(async (work) => {
+            try {
+              await saveWatch(work, status === "watched" ? "save" : "add", { status });
+              card.remove();
+              refresh();
+            } catch (error) { showToast(error.message); }
+          });
+          if (row.items?.length) renderWorkChoices(card, row.items, async (work) => {
+            try {
+              await saveWatch(work, status === "watched" ? "save" : "add", { status });
+              card.remove();
+              refresh();
+            } catch (error) { showToast(error.message); }
+          });
+          else card.append(element("p", row.retry ? "索引暂忙，可重试或改用完整片名。" : "暂未匹配到作品。", "tree-copy"));
+          card.append(picker.node, textButton("重查原名称", () => picker.searchBy(row.input), "text-button"));
+          unresolved.append(card);
+        }
+        watchRead = null;
+        refresh();
+      }, "primary-button");
+      box.append(control("粘贴片名", content), control("导入 TXT、CSV 或 JSON", file), start, feedback, unresolved);
       return box;
     }
 
     async function renderWatchlist(container, status) {
       const isWatched = status === "watched";
       const list = element("div");
-      container.append(lookupPanel(async (work) => {
+      const lookup = lookupPanel(async (work) => {
         try {
           await saveWatch(work, isWatched ? "save" : "add", { status });
-          openTree(status);
+          await refresh();
           showToast(isWatched ? "已记入已追。" : "已加入待追。");
         } catch (error) { showToast(error.message); }
-      }), list);
+      }, { key: status });
+      const filter = choice([["", "全部"], ["favorite", "最喜欢"], ["like", "喜欢"], ["neutral", "一般"], ["dislike", "不喜欢"]]);
+      container.append(lookup.node, watchImport(status, refresh));
+      if (isWatched) container.append(control("按喜爱程度筛选", filter));
+      container.append(list);
+      let current = [];
+      let stats;
+      let generation = 0;
       list.textContent = "正在读取清单…";
-      try {
-        const { items, stats } = await apiJson("/api/watchlist");
-        if (!list.isConnected) return;
-        list.replaceChildren();
+
+      function cardFor(item) {
+        const card = workTile({ ...item.work, features: item.features });
+        const actions = element("div", undefined, "experience-actions");
         if (isWatched) {
+          const love = choice([["favorite", "最喜欢"], ["like", "喜欢"], ["neutral", "一般"], ["dislike", "不喜欢"]], item.love);
+          love.setAttribute("aria-label", "喜爱程度");
+          love.addEventListener("change", async () => {
+            try { await saveWatch(item.work, "save", { status, love: love.value }); refresh(); }
+            catch (error) { showToast(error.message); }
+          });
+          actions.append(love, element("span", `${item.plays} 刷`), busyButton("再刷一次", async () => {
+            await saveWatch(item.work, "rewatch"); refresh();
+          }), textButton("写评价", () => reviewWork(item.work, true, item.review, item.love)));
+        } else {
+          actions.append(busyButton("记为已追", async () => {
+            await saveWatch(item.work, "save", { status: "watched" }); refresh();
+          }));
+        }
+        actions.append(busyButton("移除", async () => {
+          await saveWatch(item.work, "remove"); refresh();
+        }, "text-button"));
+        card.append(actions);
+        return card;
+      }
+
+      function paint() {
+        list.replaceChildren();
+        if (isWatched && stats) {
           const overview = element("section", undefined, "tree-card");
           overview.append(element("h3", `已追 ${stats.watched} 部 · 重刷 ${stats.rewatches} 次`));
-          if (stats.topTags.length) {
-            overview.append(element("p", "共同作品特征", "tree-copy"));
-            fitTags(overview, stats.topTags);
-          }
-          if (stats.topReasons.length) {
-            overview.append(element("p", "戳到我的点", "tree-copy"));
-            fitTags(overview, stats.topReasons);
-          }
+          if (stats.topTags.length) { overview.append(element("p", "共同作品特征", "tree-copy")); fitTags(overview, stats.topTags); }
+          if (stats.topReasons.length) { overview.append(element("p", "戳到我的点", "tree-copy")); fitTags(overview, stats.topReasons); }
           if (stats.dimensions) overview.append(radarPanel(Object.fromEntries(Object.entries(stats.dimensions)
             .map(([key, value]) => [model.criteria[key], value])), 10));
           list.append(overview);
         }
-        const rows = element("div");
-        list.append(rows);
-        const render = (filter) => {
-          rows.replaceChildren();
-          const matches = items.filter((item) => item.status === status && (!filter || item.love === filter));
-          if (!matches.length) rows.append(element("p", "这里还没有作品。", "tree-copy"));
-          for (const item of matches) {
-            const card = workTile({ ...item.work, features: item.features });
-            const actions = element("div", undefined, "experience-actions");
-            if (isWatched) {
-              const love = choice([["favorite", "最喜欢"], ["like", "喜欢"], ["neutral", "一般"], ["dislike", "不喜欢"]], item.love);
-              love.setAttribute("aria-label", "喜爱程度");
-              love.addEventListener("change", async () => {
-                try { await saveWatch(item.work, "save", { status, love: love.value }); openTree(status); }
-                catch (error) { showToast(error.message); }
-              });
-              actions.append(love, element("span", `${item.plays} 刷`), busyButton("再刷一次", async () => {
-                await saveWatch(item.work, "rewatch"); openTree(status);
-              }));
-              const details = element("details");
-              details.append(element("summary", "评价这部作品"));
-              const form = element("form");
-              const editor = reviewEditor(item.review, undefined, { work: item.work });
-              form.append(editor.node, element("button", "保存追番评价", "primary-button"));
-              form.addEventListener("submit", async (event) => {
-                event.preventDefault();
-                try { await saveWatch(item.work, "save", { status, review: editor.read() }); openTree(status); }
-                catch (error) { showToast(error.message); }
-              });
-              details.append(form);
-              card.append(details);
-            } else {
-              actions.append(busyButton("记为已追", async () => {
-                await saveWatch(item.work, "save", { status: "watched" });
-                openTree("watched");
-              }));
-            }
-            actions.append(busyButton("移除", async () => {
-              await saveWatch(item.work, "remove"); openTree(status);
-            }, "text-button"));
-            card.append(actions);
-            rows.append(card);
+        const matches = current.filter((item) => item.status === status && (!filter.value || item.love === filter.value));
+        if (!matches.length) list.append(element("p", "这里还没有作品。", "tree-copy"));
+        const series = new Map();
+        for (const item of matches) {
+          const ref = item.work;
+          const explicitParent = current.find((entry) => entry.work.provider === "bangumi-series" &&
+            entry.status === status && entry.members?.includes(ref.provider_id));
+          const id = ref.provider === "bangumi-series" ? ref.provider_id : ref.series_id || explicitParent?.work.provider_id;
+          if (!id) { list.append(cardFor(item)); continue; }
+          if (!series.has(id)) {
+            const title = ref.series_title || explicitParent?.work.title_display || ref.title_display;
+            const details = element("details", undefined, "series-result watch-series");
+            details.open = true;
+            const label = element("summary", title + " · 系列");
+            const rows = element("div", undefined, "series-options");
+            details.append(label, rows);
+            series.set(id, rows);
+            list.append(details);
           }
-        };
-        if (isWatched) {
-          const filter = choice([["", "全部"], ["favorite", "最喜欢"], ["like", "喜欢"], ["neutral", "一般"], ["dislike", "不喜欢"]]);
-          filter.addEventListener("change", () => render(filter.value));
-          list.insertBefore(control("按喜爱程度筛选", filter), rows);
+          series.get(id).append(cardFor(item));
         }
-        render("");
-      } catch (error) { list.textContent = error.message; }
+      }
+
+      async function refresh() {
+        const request = ++generation;
+        try {
+          const data = await getWatchlist();
+          if (!list.isConnected || request !== generation) return;
+          current = data.items;
+          stats = data.stats;
+          paint();
+        } catch (error) { if (list.isConnected) list.textContent = error.message; }
+      }
+      filter.addEventListener("change", paint);
+      await refresh();
+    }
+
+    function renderSearch(container) {
+      const search = lookupPanel(openWork, { mode: true, key: "search" });
+      container.append(search.node);
+      const photo = element("details", undefined, "tree-card photo-search");
+      const file = element("input");
+      file.type = "file";
+      file.accept = "image/*";
+      const camera = element("input");
+      camera.type = "file";
+      camera.accept = "image/*";
+      camera.setAttribute("capture", "environment");
+      const status = element("p", "", "tree-copy");
+      status.setAttribute("role", "status");
+      const disclosure = element("p", "", "tree-copy");
+      const results = element("div", undefined, "tree-search-results");
+      let sources;
+      const upload = async () => {
+        const image = camera.files?.[0] || file.files?.[0];
+        if (!image) { status.textContent = "请先选择图片。"; return; }
+        results.replaceChildren();
+        status.textContent = "正在搜图并查询 Bangumi…";
+        try {
+          const found = await PHOTO_SEARCH.searchImage(image);
+          if (!results.isConnected) return;
+          if (found.items.length) {
+            status.textContent = "请确认匹配到的番剧。";
+            for (const work of found.items) {
+              const row = element("button", undefined, "tree-search-result");
+              row.type = "button";
+              row.append(element("strong", work.title_display), element("span", [work.year, work.image_source].filter(Boolean).join(" · ")));
+              row.addEventListener("click", () => openWork(work));
+              results.append(row);
+            }
+          } else if (found.clues.length) {
+            status.textContent = found.catalogUnavailable ? "Bangumi 暂时没有响应，可用搜图线索重查。"
+              : "还没定位到番剧，可用搜图获得的线索重查。";
+            for (const clue of found.clues) {
+              results.append(textButton(`${clue.text} · ${clue.source}`, () =>
+                search.searchBy(clue.text, clue.mode === "character" ? "character" : "title"), "outline-button"));
+            }
+          } else status.textContent = sources.length === 1 ? "暂未找到相符的正片截图。角色图或海报需要开通插画或网页搜图来源。"
+            : "这张图暂未搜到可用的作品或角色线索。";
+        } catch (error) { status.textContent = error.message; }
+      };
+      const button = busyButton("搜图", upload, "primary-button");
+      button.disabled = true;
+      photo.addEventListener("toggle", () => {
+        if (!photo.open || sources) return;
+        status.textContent = "正在确认可用的搜图来源…";
+        apiJson("/api/photo-search").then(({ providers }) => {
+          sources = providers;
+          disclosure.textContent = `点击搜图会把图片发送给已启用的外部服务（${providers.join("、")}）。本站不保存图片。`;
+          status.textContent = providers.length === 1 ? "当前已启用正片截图搜索。" : "";
+          button.disabled = false;
+        }).catch((error) => { status.textContent = error.message; });
+      });
+      file.addEventListener("change", () => { camera.value = ""; });
+      camera.addEventListener("change", () => { file.value = ""; });
+      photo.append(element("summary", "拍照或选图片"), control("选择海报或图片", file), control("用相机拍摄", camera),
+        disclosure, button, status, results);
+      container.append(photo);
+    }
+
+    async function renderWorkDetail(container, reference) {
+      const area = element("div");
+      container.append(area);
+      area.textContent = "正在读取作品详情…";
+      try {
+        let ref = reference;
+        if (!["bangumi", "bangumi-series"].includes(ref.provider)) {
+          const lookup = await findWorks(ref.title_display);
+          const sameYear = lookup.items.filter((item) => Number(item.year) === Number(ref.year) && sameWork(item, ref));
+          ref = sameYear.length === 1 ? sameYear[0] : lookup.exact || ref;
+        }
+        const detail = ["bangumi", "bangumi-series"].includes(ref.provider)
+          ? await apiJson(`/api/anime-search?id=${ref.provider_id}`, undefined, 7000).catch(() => ({ work: ref, items: [] }))
+          : { work: ref, items: [] };
+        if (!area.isConnected) return;
+        const work = { ...ref, ...detail.work };
+        if (!work.title_display) { area.textContent = "暂时无法读取作品详情。"; return; }
+        if (ref.provider === "bangumi-series") {
+          work.provider = "bangumi-series";
+          work.title_display = ref.title_display || detail.series?.title || work.title_display;
+          work.members = detail.items.map(({ provider_id }) => provider_id);
+        }
+        const card = workTile(work);
+        if (work.cover) {
+          const image = element("img", undefined, "detail-cover");
+          image.src = work.cover;
+          image.alt = work.title_display + " 海报";
+          card.prepend(image);
+        }
+        if (work.aliases?.length) card.append(element("p", work.aliases.join(" · "), "tree-copy"));
+        if (work.summary) card.append(element("p", work.summary, "work-summary"));
+        const tools = element("div", undefined, "experience-actions");
+        tools.append(wantButton(work), busyButton("记为已追", async () => {
+          if (!requireAccount("登录后可以保存已追记录。")) return;
+          await saveWatch(work, "save", { status: "watched" });
+          showToast("已记入已追。");
+        }), textButton("写评价", () => reviewWork(work)), externalWorkLink(work));
+        if (work.provider_id && ["bangumi", "bangumi-series"].includes(work.provider)) {
+          tools.append(textButton("看系列讨论", () => openBoard(work)));
+        }
+        card.append(tools);
+        area.replaceChildren(card);
+        const related = detail.items.filter((item) => item.provider_id !== work.provider_id || work.provider === "bangumi-series");
+        if (related.length) {
+          const panel = element("section", undefined, "tree-card");
+          panel.append(element("h3", "同系列作品"));
+          for (const item of related) {
+            const line = element("p");
+            line.append(workLink(item, [item.title_display, item.year].filter(Boolean).join(" · ")));
+            panel.append(line);
+          }
+          area.append(panel);
+        }
+      } catch (error) { area.textContent = error.message; }
+    }
+
+    function renderOnlinePicks(container, works, { rate } = {}) {
+      for (const work of works) {
+        const card = workTile(work);
+        if (work.overlap?.length) card.append(element("p", `契合的看点 · ${work.overlap.join("、")}`, "tree-copy"));
+        if (work.summary) card.append(element("p", work.summary.slice(0, 150), "tree-copy"));
+        const actions = element("div", undefined, "experience-actions");
+        actions.append(wantButton(work));
+        if (rate) actions.append(textButton("写评价", () => rate(work)));
+        card.append(actions);
+        container.append(card);
+      }
     }
 
     function renderDiscovery(container) {
@@ -568,12 +848,14 @@
       try {
         const data = await apiJson(`/api/thread?post=${encodeURIComponent(id)}`);
         paint(data);
+        if (!data.post.works.length) return;
         source.hidden = false;
         source.append(element("h2", "站外高赞评论"), element("p", "正在匹配相关作品…", "tree-copy"));
         const outputs = await Promise.allSettled(data.post.works.map((entry) => external(entry.external_ref)));
         if (!source.isConnected) return;
         source.replaceChildren(element("h2", "站外高赞评论"));
         const seen = new Set();
+        const unavailable = outputs.some((result) => result.status === "rejected" || result.value?.unavailable);
         for (const result of outputs) {
           if (result.status !== "fulfilled") continue;
           for (const item of result.value.items) {
@@ -585,7 +867,7 @@
             source.append(line);
           }
         }
-        if (!seen.size) source.append(element("p", "暂无已匹配的高赞评论。", "tree-copy"));
+        if (!seen.size) source.append(element("p", unavailable ? "站外评论暂时无法读取。" : "暂未找到这部作品的高赞评论。", "tree-copy"));
         for (const result of outputs) if (result.status === "fulfilled") {
           for (const item of result.value.links || []) if (!seen.has(item.url)) {
             seen.add(item.url); source.append(link(item.url, `到 ${item.source} 看原讨论 ↗`));
@@ -737,8 +1019,8 @@
       } catch (error) { container.textContent = error.message; }
     }
 
-    return { preferencesPanel, reviewEditor, wantButton, saveWatch, renderWatchlist, renderDiscovery,
-      renderThread, renderShare, renderShared, radarPanel };
+    return { preferencesPanel, reviewEditor, wantButton, saveWatch, renderWatchlist, renderDiscovery, renderSearch,
+      renderWorkDetail, renderOnlinePicks, renderThread, renderShare, renderShared, radarPanel };
   }
   root.createWatchExperience = create;
 })(globalThis);

@@ -345,16 +345,48 @@ a { color: var(--green); }
 
 .account-modes { display: flex; gap: 0.4rem; margin: 0.85rem 0; flex-wrap: wrap; }
 .account-modes [aria-pressed="true"] { background: var(--green-soft); color: var(--green-dark); border-color: var(--green-line); }
-.account-confirm input, .account-dialog .tree-form > input, .password-field input {
+.account-confirm input, .account-dialog .tree-form > input {
   width: 100%;
   min-width: 0;
   padding: 0.65rem 0.75rem;
   border: 1px solid var(--line-strong);
   border-radius: 8px;
 }
-.password-field { position: relative; }
-.password-field input { padding-inline-end: 3.5rem; }
-.password-field button { position: absolute; inset: 50% 0.6rem auto auto; transform: translateY(-50%); }
+.account-dialog .password-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  width: 100%;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--paper);
+}
+.account-dialog .password-field:focus-within {
+  border-color: var(--green);
+  box-shadow: 0 0 0 3px rgba(31,122,77,0.08);
+}
+.account-dialog .password-field input {
+  width: 100%;
+  min-width: 0;
+  padding: .65rem .75rem;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.account-dialog .password-field input:focus { box-shadow: none; }
+.password-field button {
+  align-self: center;
+  margin: .2rem;
+  padding: .35rem .7rem;
+  min-inline-size: 3rem;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--ink-soft);
+  font-size: .76rem;
+  white-space: nowrap;
+}
+.password-field button:hover { background: var(--green-soft); color: var(--green-dark); }
+.password-field button:focus-visible { outline: 2px solid var(--green); outline-offset: -2px; }
 .account-confirm .tree-copy { margin-top: 0.35rem; }
 
 .feed-controls { flex-wrap: wrap; }
@@ -608,9 +640,10 @@ a { color: var(--green); }
   font-size: clamp(.74rem, 1.65vw, 1rem);
   transition: flex-grow 220ms ease, background-color 180ms ease;
 }
-.hub-piece:nth-child(2) { border-radius: 0.7rem 1.4rem 0.7rem 2.2rem; background: #f8eedb; color: #634925; }
-.hub-piece:nth-child(3) { border-radius: 1.4rem 0.7rem 2.2rem 0.7rem; background: #eaf0f8; color: #324f77; }
-.hub-piece:nth-child(4) { border-radius: 0.7rem 2.2rem 0.7rem 1.4rem; background: #f3eaf1; color: #654760; }
+.hub-piece[data-area="search"] { border-radius: .7rem 1.4rem .7rem 2.2rem; background: #eaf0f8; color: #324f77; }
+.hub-piece[data-area="discover"] { border-radius: 1.25rem .7rem 1.25rem .7rem; background: #f8eedb; color: #634925; }
+.hub-piece[data-area="wanted"] { border-radius: 1.4rem .7rem 2.2rem .7rem; background: #e9f3f2; color: #295751; }
+.hub-piece[data-area="profile"] { border-radius: .7rem 2.2rem .7rem 1.4rem; background: #f3eaf1; color: #654760; }
 .hub-piece.is-active { flex-grow: 3.2; border-color: currentColor; box-shadow: 0 5px 0 #17251b14; }
 .hub-piece:hover { border-color: currentColor; }
 .piece-icon { font-size: 1.3em; }
@@ -631,7 +664,7 @@ a { color: var(--green); }
 .review-scores { display:grid; grid-template-columns:repeat(auto-fit,minmax(7.5rem,1fr)); gap:.6rem; }
 .tag-composer { margin:1rem 0 .65rem; }
 .tag-composer > button { margin-top:.4rem; }
-.taste-radar { width:min(100%, 34rem); height:auto; display:block; margin:.6rem auto .2rem; }
+.taste-radar { width:min(100%, 34rem); height:auto; display:block; margin:.6rem auto .2rem; border-radius: .7rem; }
 .post-highlight { display:block; position:absolute; right:5%; top:9%; max-width:70%; color:#3157460b; font-family: var(--serif); font-weight:750; font-size:clamp(1.55rem,5vw,4rem); line-height:1.03; pointer-events:none; overflow-wrap:anywhere; }
 .public-review { position:relative; overflow:hidden; }
 .public-review > :not(.post-highlight) { position:relative; }
@@ -649,7 +682,29 @@ a { color: var(--green); }
 .footprint-tools { align-items: center; }
 .footprint-tools label { display: inline-flex; align-items: center; gap: .45rem; color: var(--muted); }
 .footprint-tools input { accent-color: var(--green); width: 1.05rem; height: 1.05rem; }
+.feedback-message, .work-summary { white-space: pre-wrap; overflow-wrap: anywhere; }
+.watch-import, .photo-search, .work-search-panel, .board-search { margin-bottom: .7rem; }
+.watch-import .experience-field, .photo-search .experience-field { margin: .65rem 0; }
+.watch-series { margin: .65rem 0; }
+.watch-series .watch-work { margin: .4rem 0; }
+.detail-cover { max-width: min(9rem, 35%); height: auto; float: right; margin: 0 0 .7rem .7rem; border-radius: .5rem; }
+.work-summary, .watch-work { display: flow-root; }
+.watched-badge { display: inline-block; color: var(--green-dark); border: 1px solid var(--green-line); background: var(--green-soft); border-radius: 9rem; padding: .15rem .55rem; font-size: .75rem; }
+.dashboard-totals { display: grid; grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr)); gap: .55rem; margin: 1rem 0; }
+.dashboard-totals div { padding: .65rem; border: 1px solid var(--line); border-radius: 10px; }
+.dashboard-totals dd { margin: .35rem 0 0; font-weight: 700; font-size: 1.6rem; }
+.dashboard-chart { margin-top: .85rem; }
+.chart-bars { display: grid; gap: .45rem; margin-top: .55rem; }
+.chart-bars .chart-point { display: grid; grid-template-columns: minmax(5rem, 1fr) minmax(4rem, 3fr) 2rem; align-items: center; gap: .5rem; }
+.chart-point meter { width: 100%; accent-color: var(--green); }
+.chart-columns { display: grid; grid-template-columns: repeat(14, minmax(0, 1fr)); gap: .2rem; margin-top: .5rem; }
+.chart-columns .chart-point { display: grid; justify-items: center; grid-template-rows: auto 4.7rem auto; font-size: .65rem; gap: .28rem; }
+.chart-columns .chart-point meter { writing-mode: vertical-lr; width: 0.75rem; height: 100%; direction: rtl; }
+.chart-columns .chart-point span { writing-mode: vertical-rl; grid-row: 3; }
+.chart-columns .chart-point strong { grid-row: 1; }
 @media (max-width: 560px) {
+  .hub-piece { font-size: .64rem; padding-inline: .2rem; }
+  .hub-piece.is-active { flex-grow: 1.8; }
   .discover-axis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .discover-axis button { white-space: normal; }
 }

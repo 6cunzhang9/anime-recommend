@@ -1,7 +1,7 @@
 import { checkAccountContext, getUser, keyPart, readJson, RequestError } from "../shared/auth.mjs";
 import { bookmarkKey, summarizeThread, threadKey } from "../shared/discussions.mjs";
 import { cursorPattern, postFromRecord, readPostRecords, withdrawFavorite } from "../shared/posts.mjs";
-import { errorResponse, getResponsesStore, jsonResponse, ratingKey, readAllRatings, readAllRecords } from "../shared/store.mjs";
+import { errorResponse, forumKey, getResponsesStore, jsonResponse, ratingKey, readAllRatings, readAllRecords, readForum } from "../shared/store.mjs";
 
 export const config = { path: "/api/footprints", method: ["GET", "POST"],
   rateLimit: { action: "rate_limit", aggregateBy: "ip", windowSize: 60, windowLimit: 40 } };
@@ -10,15 +10,15 @@ async function withdraw(req, store, user) {
   const payload = await readJson(req, 14000);
   checkAccountContext(payload, user);
   if (!Array.isArray(payload.posts) || !payload.posts.length || payload.posts.length > 50 ||
-      payload.posts.some((post) => !["favorite", "review"].includes(post?.type) || typeof post.id !== "string" || !keyPart.test(post.id))) {
+      payload.posts.some((post) => !["favorite", "review", "general"].includes(post?.type) || typeof post.id !== "string" || !keyPart.test(post.id))) {
     return errorResponse(400, "每次请选择 1–50 条自己的发言");
   }
   const unique = new Map(payload.posts.map(({ type, id }) => [`${type}:${id}`, { type, id }]));
   const results = [];
   for (const post of unique.values()) {
     try {
-      if (post.type === "review") {
-        await store.delete(ratingKey(post.id, user.id));
+      if (post.type !== "favorite") {
+        await store.delete(post.type === "general" ? forumKey(post.id, user.id) : ratingKey(post.id, user.id));
         results.push({ ...post, removed: true });
       } else {
         const result = await withdrawFavorite(store, user.id, post.id);
@@ -34,14 +34,14 @@ async function withdraw(req, store, user) {
 
 async function listPosts(store, user, view, before) {
   const records = view === "own"
-    ? (await Promise.all([readAllRecords(user.id), readAllRatings(user.id)])).flat()
+    ? (await Promise.all([readAllRecords(user.id), readAllRatings(user.id), readForum(user.id)])).flat()
     : await readPostRecords();
   const posts = records.map(postFromRecord).filter((post) => post && (view === "own" || !post.moderated) &&
     (!before || post.sortKey < before)).sort((a, b) => b.sortKey.localeCompare(a.sortKey));
 
   if (view === "own") {
-    return { posts: posts.map(({ id, target, moderated, type, works, published_at }) =>
-      ({ id: moderated ? null : id, recordId: target.id, moderated, type, works, published_at })), next: null };
+    return { posts: posts.map(({ id, target, sortKey, ...post }) =>
+      ({ ...post, id: post.moderated ? null : id, recordId: target.id })), next: null };
   }
 
   const prefix = view === "saved" ? bookmarkKey(user.id) : "threads/";
@@ -53,8 +53,8 @@ async function listPosts(store, user, view, before) {
     const rows = await Promise.all(candidates.slice(start, start + 20).map(async (post) => {
       const thread = await store.get(threadKey(post.id), { type: "json" });
       if (view === "liked" && !thread?.likes?.includes(user.id)) return null;
-      const { id, type, works, published_at, sortKey } = post;
-      return { sortKey, post: { id, type, works, published_at, ...summarizeThread(thread) } };
+      const { target, moderated, sortKey, ...visible } = post;
+      return { sortKey, post: { ...visible, ...summarizeThread(thread) } };
     }));
     selected.push(...rows.filter(Boolean));
   }

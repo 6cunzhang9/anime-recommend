@@ -9,6 +9,7 @@ const PUBLIC_FILES = [
   "styles.css",
   "app.js",
   "watch-model.js",
+  "photo-search.js",
   "experience.js",
   "taste-analysis.js",
   "series-data.js",

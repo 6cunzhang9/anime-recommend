@@ -1,71 +1,90 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
-import { createContext, runInContext } from "node:vm";
-import catalog from "../catalog.js";
-import questionData from "../test-data.js";
-import series from "../series-data.js";
-import watch from "../watch-model.js";
-import taste from "../taste-analysis.js";
+import { mkdtemp, rm, rmdir } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { discoverySignals } from "../netlify/shared/discovery-signals.mjs";
+import { searchAnime } from "../netlify/shared/bangumi.mjs";
+import discover from "../netlify/functions/discover.mjs";
+import { startSession } from "../netlify/shared/auth.mjs";
+import { changeWatchlist } from "../netlify/shared/watchlist.mjs";
 
-const { ANIME_CATALOG } = catalog;
-const { QUESTIONS } = questionData;
-const dimensions = ANIME_CATALOG.map(taste.workDimensions);
-assert.ok(ANIME_CATALOG.length >= 150);
-assert.equal(new Set(dimensions.map((item) => JSON.stringify(item))).size, ANIME_CATALOG.length);
-for (const values of dimensions) {
-  assert.equal(Object.keys(values).length, Object.keys(taste.AXES).length);
-  assert.ok(Object.values(values).every((value) => Number.isInteger(value) && value >= 0 && value <= 100));
-}
-
-const sandbox = createContext({ ...catalog, ...questionData, ANIME_TASTE: taste, ANIME_SERIES: series, WATCH_MODEL: watch,
-  document: { querySelector: () => null } });
-const source = await readFile(new URL("../app.js", import.meta.url), "utf8");
-runInContext(source.replace("  init();", "  globalThis.engine = { state, deriveProfile, buildRecommendations };"), sandbox);
-const { state, deriveProfile, buildRecommendations } = sandbox.engine;
-
-let seed = 0xa11ce;
-function random() {
-  seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
-  return seed / 2 ** 32;
-}
-
-function sampleAnswers() {
-  const take = (options) => options[Math.floor(random() * options.length)].code;
-  return Object.fromEntries(QUESTIONS.slice(0, 39).map((question) => {
-    const { id, options, type, rows, rankCount } = question;
-    if (type === "matrix") return [id, Object.fromEntries(rows.map((row) => [row.key, take(row.options)]))];
-    if (type === "likert") {
-      const index = Math.floor(random() * options.length);
-      return [id, { value: index + 1, code: options[index].code }];
-    }
-    if (type === "rank") {
-      const pool = [...options];
-      return [id, Array.from({ length: rankCount }, () => pool.splice(Math.floor(random() * pool.length), 1)[0].code)];
-    }
-    if (type === "multi") return [id, [take(options)]];
-    return [id, take(options)];
-  }));
-}
-
-const reachable = new Set();
-for (let i = 0; i < 180 && reachable.size < ANIME_CATALOG.length; i++) {
-  state.answers = sampleAnswers();
-  const normalized = taste.compile(state.answers, QUESTIONS);
-  assert.deepEqual(taste.decode(normalized, QUESTIONS), state.answers);
-  const favorites = [{ title_raw: "不在精选库的作品", reasons: [], external_ref: { provider: "manual", title_display: "不在精选库的作品" } }];
-  const profile = deriveProfile(state.answers, favorites);
-  const result = buildRecommendations(profile, favorites, { seed: String(i) });
-  assert.equal(result.candidateCount, ANIME_CATALOG.length);
-  for (const entry of result.top) if (entry.source !== "探索推荐") reachable.add(entry.anime.id);
-  if (result.exploration.candidates.length) {
-    const unseenIndex = result.exploration.candidates.findIndex((id) => !reachable.has(id));
-    if (unseenIndex >= 0) {
-      const rotated = buildRecommendations(profile, favorites, { exploreIndex: unseenIndex });
-      assert.equal(rotated.top.at(-1).anime.id, result.exploration.candidates[unseenIndex]);
-    }
-    for (const id of result.exploration.candidates) reachable.add(id);
+const root = await mkdtemp(join(tmpdir(), "soul-lab-recommendations-"));
+const file = join(root, "store.json");
+const previousStore = process.env.ANIME_LOCAL_STORE;
+process.env.ANIME_LOCAL_STORE = file;
+const originalFetch = globalThis.fetch;
+const base = "http://127.0.0.1/api/discover";
+const row = (id, name, date, tags, platform = "TV") => ({
+  id, type: 2, name, name_cn: name, date, platform, tags: tags.map((name) => ({ name })),
+  rating: { score: 8, total: 100 }, summary: "成长与温暖"
+});
+const works = [
+  row(80, "测试番", "2012-01-01", ["治愈", "日常", "温暖"]),
+  row(81, "测试番 第二季", "2015-04-01", ["治愈", "日常", "温暖"]),
+  row(82, "高度匹配老番", "1997-04-01", ["治愈", "日常", "温暖", "成长"]),
+  row(83, "普通老番", "2004-04-01", ["战斗"]),
+  row(84, "另一部 2014 番", "2014-04-01", ["成长"]),
+  row(85, "显式避免的番", "2023-04-01", ["猎奇"])
+];
+let calls = 0;
+let throttled = false;
+globalThis.fetch = async (url, options) => {
+  const path = new URL(url);
+  assert.equal(path.host, "api.bgm.tv");
+  calls += 1;
+  if (throttled) return Response.json({}, { status: 429, headers: { "Retry-After": "60" } });
+  if (path.pathname.endsWith("/search/subjects")) {
+    const { filter } = JSON.parse(options.body);
+    const data = works.filter((item) => (filter.air_date || []).every((term) => {
+      const match = term.match(/^(>=|<=|<)(.*)$/);
+      if (!match) return true;
+      return match[1] === ">=" ? item.date >= match[2] : match[1] === "<=" ? item.date <= match[2] : item.date < match[2];
+    }) && (filter.tag || []).every((tag) => item.tags.some(({ name }) => name === tag)));
+    return Response.json({ data });
   }
+  const row = works.find((item) => String(item.id) === path.pathname.split("/").at(-1));
+  return row ? Response.json(row) : Response.json({}, { status: 404 });
+};
+
+try {
+  const answers = { q03: ["m_relax"], q09: ["set_everyday"], q13: ["drive_mood"],
+    q18: ["char_growth"], q23: ["feel_warmth"], q38: ["avoid_cruelty"] };
+  const weights = discoverySignals(answers);
+  const broaderChoice = discoverySignals({ ...answers, q09: ["set_everyday", "set_school_youth", "set_fantasy", "set_history"] });
+  assert.ok(broaderChoice.find(({ tag }) => tag === "日常").weight < weights.find(({ tag }) => tag === "日常").weight);
+
+  const id = "f".repeat(32);
+  const cookie = (await startSession(new Request(base), { id, username: "qa" })).split(";")[0];
+  await changeWatchlist(id, { action: "add", status: "watched", work: { provider: "bangumi", provider_id: "80", title_display: "测试番", year: 2012 } });
+  const recommend = async (settings) => {
+    const response = await discover(new Request(base, { method: "POST", headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify({ assessment: { answers, favorites: [] }, ...settings }) }));
+    const result = await response.json();
+    assert.equal(response.status, 200, result.error);
+    return result.items;
+  };
+  const items = await recommend({});
+  assert.deepEqual(items.map((item) => item.provider_id), ["81", "84", "82"]);
+  assert.equal(items.at(-1).older, true);
+  assert.ok(items[0].overlap.includes("治愈"));
+  assert.deepEqual((await recommend({ until: 2010 })).map((item) => item.provider_id), ["82", "83"]);
+
+  const before = calls;
+  await Promise.all(Array.from({ length: 12 }, () => searchAnime("相同查询", { limit: 4 })));
+  await searchAnime("相同查询", { limit: 4 });
+  assert.equal(calls - before, 1, "重复和并发查询应共用外部请求");
+  throttled = true;
+  await assert.rejects(searchAnime("触发上游限流", { limit: 4 }), /429/);
+  const pausedAt = calls;
+  await assert.rejects(searchAnime("另一个新查询", { limit: 4 }), /暂忙/);
+  await searchAnime("相同查询", { limit: 4 });
+  assert.equal(calls, pausedAt, "上游限流期间应从缓存响应，并暂停新的外部请求");
+  console.log("Bangumi 推荐、跨年限制、同系列不同季、排斥项与并发缓存检查通过。");
+} finally {
+  globalThis.fetch = originalFetch;
+  if (previousStore === undefined) delete process.env.ANIME_LOCAL_STORE;
+  else process.env.ANIME_LOCAL_STORE = previousStore;
+  await rm(file, { force: true });
+  await rm(file + ".tmp", { force: true });
+  await rmdir(root);
 }
-const unreachable = ANIME_CATALOG.filter(({ id }) => !reachable.has(id));
-assert.deepEqual(unreachable.map(({ title }) => title), [], "精选库存在永远不能进入推荐的作品");
-console.log(`${reachable.size}/${ANIME_CATALOG.length} 部作品具有不同的标准向量和经过测评样本验证的推荐入口。`);

@@ -73,7 +73,9 @@
     return values.length ? Math.round(values.reduce((a, b) => a + b, 0) / values.length * 10) / 10 : null;
   }
   function tastes(entries) {
-    const watched = entries.filter((item) => item.status === "watched");
+    const watched = entries.filter((item) => item.status === "watched" && !(item.work?.provider === "bangumi-series" &&
+      entries.some((child) => child.status === "watched" && child.work?.provider === "bangumi" &&
+        (child.work.series_id === item.work.provider_id || item.members?.includes(child.work.provider_id)))));
     const counts = new Map();
     const reasons = new Map();
     const points = {};

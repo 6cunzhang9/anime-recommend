@@ -18,6 +18,7 @@
         <small>ANIME SOUL LAB</small>
       </span>
     </button>
+    <button class="quiet-button" id="account-open" type="button" hidden>登录</button>
   </header>
 
   <main class="site-main">
@@ -27,7 +28,7 @@
         <h1>找到你的下一部本命番</h1>
         <p class="start-lead">聊聊你为什么喜欢一部作品。</p>
         <div class="start-actions">
-          <button class="start-button" id="start-btn" type="button">开始测试</button>
+          <button class="start-button" id="start-btn" type="button" disabled>正在确认登录状态…</button>
         </div>
         <p class="start-meta">40 道题 · 约 8–12 分钟</p>
         <div class="resume-card" id="resume-card" hidden>
@@ -154,6 +155,7 @@
       <div class="tree-wrap">
         <nav class="hub-pieces" aria-label="站点专区" hidden>
           <button class="hub-piece" type="button" data-area="reviews"><span class="piece-icon" aria-hidden="true">◉</span><span>树洞</span></button>
+          <button class="hub-piece" type="button" data-area="search"><span class="piece-icon" aria-hidden="true">⌕</span><span>搜番剧</span></button>
           <button class="hub-piece" type="button" data-area="discover"><span class="piece-icon" aria-hidden="true">✦</span><span>想追番了</span></button>
           <button class="hub-piece" type="button" data-area="wanted"><span class="piece-icon" aria-hidden="true">▤</span><span>追番列表</span></button>
           <button class="hub-piece" type="button" data-area="profile"><span class="piece-icon" aria-hidden="true">◒</span><span>个人中心</span></button>
@@ -177,6 +179,7 @@
   <footer class="site-footer">
     <div class="footer-links">
       <button type="button" id="help-open">数据与推荐说明</button>
+      <button type="button" id="feedback-open">反馈</button>
     </div>
   </footer>
 
@@ -197,7 +200,7 @@
         <label for="account-password">密码</label>
         <div class="password-field">
           <input id="account-password" name="password" type="password" autocomplete="current-password" required>
-          <button class="text-button" type="button" id="account-show-password" aria-pressed="false">显示</button>
+          <button type="button" id="account-show-password" aria-controls="account-password" aria-pressed="false">显示</button>
         </div>
         <div class="account-confirm" id="account-confirm" hidden>
           <label for="account-repeat">再次输入密码</label>
@@ -210,6 +213,22 @@
     <p id="account-status" class="tree-copy" role="status"></p>
   </dialog>
 
+  <dialog class="modal-card" id="feedback-modal" aria-labelledby="feedback-title">
+    <div class="modal-head">
+      <h2 id="feedback-title">反馈</h2>
+      <form method="dialog"><button class="modal-close" type="submit" aria-label="关闭">×</button></form>
+    </div>
+    <form id="feedback-form" class="tree-form">
+      <label for="feedback-kind">反馈类型</label>
+      <select id="feedback-kind" name="kind">
+        <option value="bug">功能问题</option><option value="data">番剧资料</option><option value="idea">功能建议</option><option value="other">其他</option>
+      </select>
+      <label for="feedback-message">反馈内容</label>
+      <textarea id="feedback-message" name="message" rows="5" maxlength="1600" required></textarea>
+      <button class="primary-button" type="submit">提交反馈</button>
+      <p id="feedback-status" class="tree-copy" role="status"></p>
+    </form>
+  </dialog>
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
   <script src="test-data.js" defer></script>
@@ -218,6 +237,7 @@
   <script src="taste-analysis.js" defer></script>
   <script src="series-data.js" defer></script>
   <script src="watch-model.js" defer></script>
+  <script src="photo-search.js" defer></script>
   <script src="experience.js" defer></script>
   <script src="app.js" defer></script>
 </body>

@@ -4,6 +4,7 @@
   "use strict";
 
   const ALGORITHM_VERSION = "rec-v5-balanced";
+  const ONLINE_ALGORITHM = "bangumi-signals-1";
   const PROFILE_VERSION = "profile-v4.0.0";
   const SESSION_KEY = "anime-soul-lab:session:v4";
   const GUEST_RESULT_KEY = "anime-soul-lab:guest-result:v1";
@@ -66,7 +67,7 @@
     saveMode: null,
     editingResponseId: null,
     accountMode: "login",
-    adminView: "results",
+    adminView: "dashboard",
     feedback: {},
     ratings: [],
     localRecords: [],
@@ -249,30 +250,6 @@
     return value && Number.isFinite(Number(value.value)) ? Number(value.value) : null;
   }
 
-  function getOptionLabel(questionId, code) {
-    const question = getQuestion(questionId);
-    return question?.options?.find((option) => option.code === code)?.label || code;
-  }
-
-  function searchCatalog(query) {
-    const normalized = normalizeTitle(query);
-    if (!normalized) return [];
-    const candidates = ANIME_CATALOG.map((anime) => {
-      const titles = [anime.title, anime.romaji, anime.english, anime.native, ...(anime.aliases || [])]
-        .filter(Boolean)
-        .map(normalizeTitle);
-      let score = 0;
-      titles.forEach((title) => {
-        if (title === normalized) score = Math.max(score, 100);
-        else if (title.startsWith(normalized)) score = Math.max(score, 80);
-        else if (title.includes(normalized)) score = Math.max(score, 60);
-        else if (normalized.includes(title) && title.length >= 3) score = Math.max(score, 40);
-      });
-      return { anime, score };
-    }).filter((item) => item.score > 0);
-    return candidates.sort((a, b) => b.score - a.score || (b.anime.quality?.communityScore || 0) - (a.anime.quality?.communityScore || 0)).slice(0, 5);
-  }
-
   function externalRefForAnime(anime) {
     return {
       provider: "anilist-candidate-snapshot",
@@ -329,73 +306,59 @@
     if (left.provider_id && right.provider_id && provider(left) === provider(right)) {
       return String(left.provider_id) === String(right.provider_id);
     }
+    if (left.year && right.year && Number(left.year) !== Number(right.year)) return false;
+    if (left.media_type && right.media_type && left.media_type !== "unknown" && right.media_type !== "unknown" &&
+        left.media_type !== right.media_type) return false;
     const titles = [left.title_display, left.title_canonical].map(normalizeTitle).filter(Boolean);
     if ([right.title_display, right.title_canonical].map(normalizeTitle).some((title) => titles.includes(title))) return true;
     const anime = catalogAnimeForRef(left);
     return Boolean(anime && anime === catalogAnimeForRef(right));
   }
 
-  async function lookupWorks(keyword, mode) {
-    const local = searchCatalog(keyword).map(({ anime }) => ({ ...externalRefForAnime(anime), year: anime.year }));
-    const canonicalMatches = local.filter((ref) => {
-      const anime = catalogAnimeForRef(ref);
-      return anime && [anime.title, anime.romaji, anime.english, anime.native, ...(anime.aliases || [])]
-        .some((name) => normalizeTitle(name) === normalizeTitle(keyword));
-    });
-    const localExact = canonicalMatches.length === 1 ? canonicalMatches[0] : null;
-    if (mode === "catalog") return { items: local, exact: localExact, fallback: false };
-    if (!state.externalSearchAvailable) return { items: [], exact: null, fallback: true };
-    try {
-      const query = localExact?.title_display || keyword;
-      const data = await apiJson(`/api/anime-search?q=${encodeURIComponent(query)}`, undefined, 4800);
-      const remote = Array.isArray(data.items) ? data.items : [];
-      const remoteExact = remote.filter((ref) => localExact
-        ? sameWork(ref, localExact) && (!ref.year || !localExact.year || Number(ref.year) === Number(localExact.year))
-        : [ref.title_display, ref.title_canonical].some((title) => normalizeTitle(title) === normalizeTitle(keyword)));
-      return {
-        items: remote.slice(0, 12),
-        exact: remoteExact.length === 1 ? remoteExact[0] : null
-      };
-    } catch {
-      return { items: [], exact: null, fallback: true };
-    }
-  }
-
   const workSearches = new Map();
+  const workSeries = new Map();
 
   function findWorks(query, mode = "remote") {
-    const normalized = normalizeTitle(query);
-    const key = mode + ":" + normalized;
+    const search = query.trim();
+    const key = mode + ":" + search.normalize("NFKC").toLowerCase();
     if (workSearches.has(key)) return workSearches.get(key);
-    const lookup = lookupWorks(query, mode).then(async ({ items, exact, fallback }) => {
-      const series = ANIME_SERIES.all.find((group) => [group.title, ...group.aliases].some((name) =>
-        normalizeTitle(name) === normalized));
-      if (series && mode === "catalog") {
-        const members = ANIME_CATALOG.filter((anime) => series.members.includes(anime.id)).map((anime) =>
-          ({ ...externalRefForAnime(anime), year: anime.year }));
-        for (const member of members) if (!items.some((ref) => sameWork(ref, member))) items.push(member);
-      }
-      const basis = exact || (series && items.find((ref) => ANIME_SERIES.identify(ref, catalogAnimeForRef(ref)) === series));
-      if (basis?.provider === "bangumi") {
-        try {
-          const data = await apiJson(`/api/anime-search?related=${encodeURIComponent(basis.provider_id)}`, undefined, 2800);
-          if (data.items?.length) {
-            const root = data.root || basis;
-            const remoteSeries = { id: `bgm-${root.provider_id}`, bangumiId: root.provider_id, title: series?.title || root.title_display };
-            const children = [basis, ...data.items].filter((ref, index, all) =>
-              all.findIndex((other) => sameWork(ref, other)) === index);
-            return { items: [...children, ...items.filter((ref) => !children.some((other) => sameWork(other, ref)))],
-              exact: root.provider_id === basis.provider_id ? null : exact, fallback,
-              series: remoteSeries, grouped: new Set(children.map((ref) => ref.provider_id)) };
-          }
-        } catch { /* Keep the normal search results. */ }
-      }
-      return { items, exact: series ? null : exact, fallback, series: mode === "catalog" ? series : undefined };
-    });
+    if (!state.externalSearchAvailable) return Promise.resolve({ items: [], exact: null, fallback: true });
+    const params = new URLSearchParams({ q: search, mode });
+    const lookup = apiJson(`/api/anime-search?${params}`, undefined, mode === "character" ? 9000 : 5800)
+      .then((data) => formatWorkResults(data)).catch(() => ({ items: [], exact: null, fallback: true }));
     workSearches.set(key, lookup);
     lookup.then(({ fallback }) => { if (fallback) workSearches.delete(key); });
     if (workSearches.size > 30) workSearches.delete(workSearches.keys().next().value);
     return lookup;
+  }
+
+  function formatWorkResults(data) {
+    if (!data.series) return data;
+    const series = { id: `bgm-${data.series.id}`, bangumiId: data.series.id, title: data.series.title };
+    return { ...data, series, grouped: new Set(data.items.filter((item) => item.series_id === data.series.id).map((item) => item.provider_id)) };
+  }
+
+  async function expandWorkResults(data) {
+    const basis = data.exact || data.items[0];
+    if (data.series || !basis || basis.provider !== "bangumi") return data;
+    let request = workSeries.get(basis.provider_id);
+    if (!request) {
+      request = apiJson(`/api/anime-search?related=${basis.provider_id}`, undefined, 3800);
+      workSeries.set(basis.provider_id, request);
+      if (workSeries.size > 30) workSeries.delete(workSeries.keys().next().value);
+    }
+    try {
+      const group = await request;
+      if (!group.items?.length) return data;
+      const root = group.root || basis;
+      const series = group.series || { id: root.provider_id, title: root.title_display };
+      const children = [basis, ...group.items].map((item) => ({ ...item, series_id: series.id, series_title: series.title }));
+      const items = [...new Map([...data.items, ...children].map((item) => [item.provider_id, item])).values()];
+      return formatWorkResults({ ...data, items, series });
+    } catch {
+      workSeries.delete(basis.provider_id);
+      return data;
+    }
   }
 
   function renderWorkChoices(container, items, choose, { favorite = false, series, grouped } = {}) {
@@ -424,7 +387,8 @@
       label.textContent = group.title + " · 系列";
       const options = document.createElement("div");
       options.className = "series-options";
-      const pickSeries = textButton("选择整个系列", () => choose(ANIME_SERIES.reference(group)));
+      const pickSeries = textButton("选择整个系列", () => choose({ ...ANIME_SERIES.reference(group),
+        members: children.map((ref) => ref.provider_id) }));
       options.append(pickSeries);
       for (const ref of children.sort((a, b) => (a.year || 0) - (b.year || 0))) add(options, ref);
       details.append(label, options);
@@ -440,7 +404,8 @@
     const title = document.createElement("strong");
     title.textContent = ref.title_display;
     const meta = document.createElement("span");
-    meta.textContent = [ref.year, ref.provider === "bangumi" ? "Bangumi" : "AniList"].filter(Boolean).join(" · ");
+    meta.textContent = [ref.year, { tv: "TV", movie: "剧场版", ova: "OVA", ona: "网络动画" }[ref.media_type],
+      ref.provider === "bangumi" ? "Bangumi" : "AniList"].filter(Boolean).join(" · ");
     button.append(title, meta);
     return button;
   }
@@ -546,7 +511,7 @@
       favorites: state.favorites,
       preferences: state.preferences,
       consent: state.consent,
-      result: state.result,
+      result: state.result?.online ? { ...state.result, pending: false } : state.result,
       record: state.record,
       responseId: state.responseId,
       saveMode: state.saveMode,
@@ -1176,18 +1141,13 @@
   async function searchFavoriteResults(entry, query, titleInput, status, results) {
     results.hidden = false;
     results.textContent = "搜索中…";
-    const { items, exact, series, grouped } = await findWorks(query.trim(), "catalog");
-    if (!results.isConnected || titleInput.value !== query || entry.external_ref) return;
-    if (exact && !grouped && !series) {
-      setFavoriteMatch(entry, exact, titleInput, status, results);
+    const available = await findWorks(query.trim());
+    const stillLooking = () => results.isConnected && titleInput.value === query && !entry.external_ref;
+    if (!stillLooking()) return;
+    if (available.intent === "season" && available.exact) {
+      setFavoriteMatch(entry, available.exact, titleInput, status, results);
       return;
     }
-    results.replaceChildren();
-    if (!items.length && !series) {
-      results.textContent = "可直接使用原题名。";
-      return;
-    }
-    renderWorkChoices(results, items, (ref) => setFavoriteMatch(entry, ref, titleInput, status, results), { favorite: true, series, grouped });
     const manual = document.createElement("button");
     manual.type = "button";
     manual.className = "text-button";
@@ -1197,7 +1157,15 @@
       status.textContent = "将使用原题名";
       results.hidden = true;
     });
-    results.append(manual);
+    const paint = (data) => {
+      if (!stillLooking()) return;
+      results.replaceChildren();
+      if (data.items.length) renderWorkChoices(results, data.items,
+        (ref) => setFavoriteMatch(entry, ref, titleInput, status, results), { ...data, favorite: true });
+      results.append(manual);
+    };
+    paint(available);
+    expandWorkResults(available).then((data) => { if (data !== available) paint(data); });
   }
 
   function createFavoriteEntry(entry, index) {
@@ -1329,7 +1297,7 @@
       const title = String(entry.title_raw || "").trim();
       let ref = entry.external_ref;
       if (!ref) {
-        const { exact, items, series } = await findWorks(title, "catalog");
+        const { exact, items, series } = await findWorks(title);
         const selected = entry.external_ref;
         ref = selected || exact;
         if (!ref && (items.length || series)) throw new Error(`请为「${title}」选择条目，或点击「使用原题名」。`);
@@ -1337,11 +1305,10 @@
       }
       const external_ref = ref;
       const matched = external_ref.lookup_status === "matched";
-      const anime = matched && external_ref.provider !== "series" ? catalogAnimeForRef(external_ref) : null;
       return {
         title_raw: (matched ? external_ref.title_display : title).slice(0, 120),
         work_type: ["series", "bangumi-series"].includes(external_ref.provider) ? "unknown"
-          : anime ? externalRefForAnime(anime).media_type : entry.work_type || "unknown",
+          : external_ref.media_type || entry.work_type || "unknown",
         external_ref,
         like_strength: entry.like_strength,
         review: WATCH_MODEL.review(entry.review),
@@ -1390,7 +1357,7 @@
       dom.loadingTitle.textContent = "正在整理你的回答";
       const profile = deriveProfile(state.answers, favorites);
       const responseId = state.editingResponseId || uid();
-      const result = buildRecommendations(profile, favorites, { seed: responseId });
+      const result = { online: true, items: [], pending: true, profile };
       const record = buildQuestionnaireRecord(responseId, profile, favorites, result);
       const previous = state.editingResponseId && state.record;
       if (previous) {
@@ -1398,11 +1365,14 @@
         record.recommendation_snapshots = [...(previous.recommendation_snapshots || []),
           previous.recommendation_snapshot].filter(Boolean).slice(-5);
       }
-      state.result = { ...result, profile };
+      state.result = result;
       state.record = record;
       state.responseId = responseId;
-      const pick = await selectCommunityPick(state.result, record);
-      if (pick) record.recommendation_snapshot.community_pick = pick;
+      state.saveMode = null;
+      renderResult(result);
+      showScreen("result");
+      await completeOnlineResult(result, record);
+      if (state.record !== record) return;
 
       if (state.account) {
         try {
@@ -1418,11 +1388,10 @@
         state.saveMode = saveQuestionnaireRecord(record) ? "local" : "unsaved";
       }
 
-      renderResult(state.result);
-      showScreen("result");
+      if (state.screen === "result") renderResult(state.result);
       if (!state.account && saveSession()) clearSession();
       saveLocalJson(COMPLETED_KEY, true);
-      if (!state.account) openAccount({
+      if (!state.account && state.screen === "result") openAccount({
         mode: "register",
         message: "登录可绑定这份审美画像与推荐、匿名发布本命番、维护追番清单和生成阅番海报。可先关闭窗口查看结果。"
       });
@@ -1595,30 +1564,56 @@
       anchors: profile.anchors,
       actual_favorites: favorites,
       recommendation_snapshots: [],
-      recommendation_snapshot: {
-        algorithm_version: ALGORITHM_VERSION,
-        config_version: `${ALGORITHM_VERSION}:initial`,
-        computed_at: new Date().toISOString(),
-        weights: CONFIG,
-        top: result.top.map((entry) => ({
-          rank: entry.rank,
-          anime_id: entry.anime.id,
-          title: entry.anime.title,
-          external_ref: externalRefForAnime(entry.anime),
-          score: Number(entry.score.toFixed(4)),
-          source: entry.source,
-          cluster_key: entry.clusterKey,
-          evidence: entry.evidence.map((item) => item.text)
-        })),
-        explore_index: result.exploration.index,
-        candidates_considered: result.candidateCount,
-        filtered: result.filtered
-      },
+      recommendation_snapshot: onlineSnapshot(result),
       consent: {
         profile_storage: Boolean(state.consent.profile_storage),
         similar_taste_anonymous_use: Boolean(state.consent.similar_taste_anonymous_use)
       }
     };
+  }
+
+  function onlineSnapshot(result, community) {
+    return {
+      algorithm_version: ONLINE_ALGORITHM,
+      computed_at: new Date().toISOString(),
+      top: result.items.map((work, index) => ({
+        rank: index + 1, anime_id: `bgm-${work.provider_id}`, title: work.title_display,
+        external_ref: { provider: work.provider, provider_id: work.provider_id, canonical_url: work.canonical_url,
+          title_display: work.title_display, title_canonical: work.title_canonical, year: work.year,
+          media_type: work.media_type, lookup_status: work.lookup_status, features: work.features },
+        score: work.score, source: "Bangumi", evidence: work.overlap || []
+      })),
+      ...(community && { community_pick: community })
+    };
+  }
+
+  async function completeOnlineResult(result, record) {
+    if (!state.apiOnline) {
+      result.error = "联网后可获取番剧推荐。";
+      result.pending = false;
+      return;
+    }
+    const favorites = (record.actual_favorites || []).map(({ external_ref }) => external_ref)
+      .filter((ref) => ref?.provider === "bangumi").map((ref) => ref.provider_id);
+    const found = apiJson("/api/discover", {
+      assessment: { answers: record.answers, preferences: record.preferences, favorites }
+    }, 13500);
+    const community = selectCommunityPick(result, record);
+    try {
+      const data = await found;
+      let old = false;
+      result.items = data.items.filter((item) => {
+        if (!item.older) return true;
+        if (old) return false;
+        old = true;
+        return true;
+      }).slice(0, 4);
+    } catch (error) {
+      result.error = error.message;
+    }
+    const pick = await community;
+    record.recommendation_snapshot = onlineSnapshot(result, pick && !result.items.some((item) => sameWork(item, pick.external_ref)) ? pick : null);
+    result.pending = false;
   }
 
   function saveQuestionnaireRecord(record) {
@@ -1637,638 +1632,6 @@
     }, 8500);
     record.publication = data.publication;
     return data;
-  }
-
-  /* ------------------------------------------------------------------ */
-  /* Recommendation engine: anchors > direct taste > context > quality  */
-  /* ------------------------------------------------------------------ */
-
-  const SETTING_HINTS = {
-    set_everyday: { features: { healing: 0.9, comedy: 0.2 }, tags: ["日常", "生活", "家庭", "治愈"] },
-    set_school_youth: { features: { romance: 0.45, healing: 0.4, comedy: 0.2 }, tags: ["校园", "青春", "成长"] },
-    set_history: { features: { dark: 0.3, action: 0.2 }, tags: ["历史", "时代", "战争", "武士"] },
-    set_fantasy: { features: { fantasy: 1 }, tags: ["奇幻", "魔法", "异世界", "神话"] },
-    set_scifi: { features: { scifi: 0.9, mystery: 0.2 }, tags: ["科幻", "机甲", "太空", "未来"] },
-    set_mystery_urban: { features: { mystery: 0.8, dark: 0.35 }, tags: ["悬疑", "推理", "都市", "犯罪"] },
-    set_music_stage: { features: { sports: 0.25 }, tags: ["音乐", "乐队", "偶像", "舞台", "竞技"], craft: { music: 0.8 } },
-    set_adventure_conflict: { features: { action: 0.8, fantasy: 0.25, scifi: 0.2 }, tags: ["冒险", "战争", "战斗", "史诗"] }
-  };
-
-  const DRIVER_HINTS = {
-    drive_plot: { features: { mystery: 0.35, action: 0.35 }, tags: ["剧情", "冒险", "悬疑"] },
-    drive_mystery: { features: { mystery: 1, dark: 0.3 }, tags: ["悬疑", "推理", "谜题", "反转"] },
-    drive_character: { features: { healing: 0.25 }, tags: ["人物", "成长", "角色"] },
-    drive_relationship: { features: { romance: 0.55, healing: 0.35 }, tags: ["关系", "群像", "羁绊"] },
-    drive_world: { features: { fantasy: 0.7, scifi: 0.5 }, tags: ["世界观", "设定", "奇幻", "科幻"] },
-    drive_performance: { features: { action: 0.7, sports: 0.5 }, tags: ["动作", "比赛", "舞台", "音乐"], craft: { visual: 0.4, music: 0.4 } },
-    drive_mood: { features: { healing: 0.7 }, tags: ["氛围", "日常", "治愈"] }
-  };
-
-  const EMOTION_HINTS = {
-    feel_warmth: { features: { healing: 0.9, romance: 0.3 }, tags: ["治愈", "温暖", "家庭"] },
-    feel_exhilaration: { features: { action: 0.8, sports: 0.5 }, tags: ["热血", "战斗", "竞技"] },
-    feel_tension: { features: { mystery: 0.6, dark: 0.6 }, tags: ["悬疑", "紧张", "心理"] },
-    feel_sadness: { features: { dark: 0.6, romance: 0.3 }, tags: ["悲剧", "情感", "离别"] },
-    feel_awe: { features: { fantasy: 0.6, scifi: 0.5 }, tags: ["史诗", "宏大", "奇观", "战争"] },
-    feel_wonder: { features: { fantasy: 0.8, scifi: 0.5 }, tags: ["奇幻", "想象", "冒险"] },
-    feel_reflection: { features: { mystery: 0.4, dark: 0.4 }, tags: ["思考", "哲学", "存在"] },
-    feel_catharsis: { features: { action: 0.5, dark: 0.4 }, tags: ["释放", "热血", "情感"] }
-  };
-
-  const RELATION_HINTS = {
-    rel_friendship: { features: { comedy: 0.3, healing: 0.3 }, tags: ["朋友", "伙伴", "群像"] },
-    rel_family: { features: { healing: 0.6 }, tags: ["家庭", "亲情", "家人"] },
-    rel_romance: { features: { romance: 0.9 }, tags: ["恋爱", "爱情", "青春"] },
-    rel_rivals: { features: { sports: 0.4, action: 0.4 }, tags: ["对手", "竞争", "热血"] },
-    rel_team: { features: { sports: 0.5, comedy: 0.3 }, tags: ["团队", "乐队", "社团", "群像"] },
-    rel_mentor: { tags: ["师徒", "前辈", "成长"], features: { healing: 0.2 } },
-    rel_companionship: { features: { healing: 0.5, romance: 0.2 }, tags: ["旅行", "陪伴", "公路"] },
-    rel_conflict: { features: { dark: 0.5, mystery: 0.2 }, tags: ["对立", "冲突", "复杂"] }
-  };
-
-  const THEME_HINTS = {
-    theme_identity: { features: { healing: 0.25 }, tags: ["成长", "自我", "身份"] },
-    theme_connection: { features: { healing: 0.4, romance: 0.2 }, tags: ["关系", "陪伴", "家庭"] },
-    theme_ideal: { features: { sports: 0.3, action: 0.2 }, tags: ["理想", "努力", "目标"] },
-    theme_society: { features: { dark: 0.3, mystery: 0.2 }, tags: ["社会", "制度", "权力"] },
-    theme_ethics: { features: { dark: 0.45 }, tags: ["道德", "选择", "代价"] },
-    theme_life_death: { features: { dark: 0.55 }, tags: ["生命", "死亡", "存在"] },
-    theme_civilization: { features: { dark: 0.4, action: 0.25 }, tags: ["历史", "战争", "文明", "人类"] },
-    theme_creation: { tags: ["艺术", "创作", "音乐"], craft: { visual: 0.3, music: 0.3 } }
-  };
-
-  const FAVORITE_REASON_HINTS = {
-    reason_plot: { features: { mystery: 0.25, action: 0.2 }, tags: ["剧情", "冒险"] },
-    reason_world: { features: { fantasy: 0.35, scifi: 0.3 }, tags: ["世界观", "设定"] },
-    reason_character: { tags: ["人物", "成长", "角色"] },
-    reason_relationship: { features: { romance: 0.35, healing: 0.25 }, tags: ["关系", "群像", "羁绊"] },
-    reason_emotion: { features: { romance: 0.2, dark: 0.25, healing: 0.2 }, tags: ["情感", "治愈"] },
-    reason_theme: { features: { dark: 0.25, mystery: 0.2 }, tags: ["主题", "思考"] },
-    reason_visual: { tags: ["美术", "视觉", "作画"], craft: { visual: 0.8 } },
-    reason_direction: { tags: ["演出", "分镜"], craft: { visual: 0.9 } },
-    reason_music: { tags: ["音乐", "配乐"], craft: { music: 1 } },
-    reason_action_or_stage: { features: { action: 0.4, sports: 0.4 }, tags: ["动作", "舞台", "比赛"], craft: { visual: 0.3, music: 0.3 } },
-    reason_pace_or_mood: { features: { healing: 0.3, mystery: 0.2 }, tags: ["氛围", "节奏"] }
-  };
-
-  const SCOPE_HINTS = {
-    scope_intimate: { features: { healing: 0.6, romance: 0.35 }, tags: ["日常", "关系"] },
-    scope_personal_growth: { tags: ["成长", "人物"], features: { healing: 0.25 } },
-    scope_group: { features: { sports: 0.3, comedy: 0.25 }, tags: ["群像", "团队", "社团"] },
-    scope_society: { features: { dark: 0.35, mystery: 0.2 }, tags: ["社会", "组织", "制度"] },
-    scope_world: { features: { fantasy: 0.35, scifi: 0.3, dark: 0.2 }, tags: ["世界", "文明", "历史"] }
-  };
-
-  const ARC_HINTS = {
-    arc_healing: { features: { healing: 0.55, romance: 0.2 }, tags: ["治愈", "和解"] },
-    arc_growth: { features: { sports: 0.35, action: 0.25 }, tags: ["成长", "努力"] },
-    arc_reveal: { features: { mystery: 0.5, dark: 0.25 }, tags: ["反转", "真相"] },
-    arc_break: { features: { dark: 0.55 }, tags: ["悲剧", "崩塌"] },
-    arc_bond: { features: { romance: 0.4, healing: 0.35 }, tags: ["关系", "羁绊"] },
-    arc_static: { features: { healing: 0.2, comedy: 0.2 }, tags: ["日常", "群像"] }
-  };
-
-  const CRAFT_HINTS = {
-    craft_animation: { visual: 1, tags: ["作画", "动作"] },
-    craft_direction: { visual: 0.9, tags: ["演出", "分镜"] },
-    craft_visual_style: { visual: 0.8, tags: ["美术", "色彩", "视觉"] },
-    craft_music: { music: 1, tags: ["音乐", "配乐"] },
-    craft_voice: { tags: ["声优", "声音"], visual: 0.1 },
-    craft_writing: { tags: ["剧本", "结构", "文字"], quality: 0.1 }
-  };
-
-  const AVOID_RULES = {
-    avoid_forced_romance: { tags: ["恋爱", "后宫", "少女向"], features: { romance: 0.55 }, amount: 0.2 },
-    avoid_fanservice: { tags: ["福利", "后宫", "情色"], amount: 0.22 },
-    avoid_cruelty: { tags: ["猎奇", "血腥", "虐待", "恐怖"], features: { dark: 0.6 }, amount: 0.25 },
-    avoid_preachy: { tags: ["说教"], amount: 0.18 },
-    avoid_formula: { tags: ["套路", "后宫"], amount: 0.12 },
-    avoid_confusing: { tags: ["意识流", "非线性", "实验"], amount: 0.12 },
-    avoid_low_stakes: { features: { healing: 0.45, comedy: 0.4 }, amount: 0.1 },
-    avoid_high_stakes: { features: { action: 0.5, dark: 0.5 }, tags: ["战争", "战斗"], amount: 0.14 }
-  };
-
-  function emptyFeatureVector() {
-    return Object.fromEntries(["fantasy", "scifi", "healing", "action", "mystery", "romance", "dark", "comedy", "sports"].map((key) => [key, 0]));
-  }
-
-  function addHint(weights, hint, factor = 1) {
-    Object.entries(hint.features || {}).forEach(([key, value]) => {
-      weights.features[key] = (weights.features[key] || 0) + value * factor;
-    });
-    (hint.tags || []).forEach((tag) => {
-      weights.tags.set(tag, (weights.tags.get(tag) || 0) + factor);
-    });
-    if (hint.craft) {
-      Object.entries(hint.craft).forEach(([key, value]) => {
-        weights.craft[key] = (weights.craft[key] || 0) + value * factor;
-      });
-    }
-  }
-
-  function buildTasteWeights(profile) {
-    const score = (value) => value && Number.isFinite(Number(value.value)) ? Number(value.value) : null;
-    const weights = {
-      features: emptyFeatureVector(),
-      tags: new Map(),
-      craft: { visual: 0, music: 0, writing: 0 },
-      pace: null,
-      currentNeed: [],
-      avoidance: new Set(profile.taste.avoidance || []),
-      paceAvoidance: new Set(profile.taste.pace_avoidance || [])
-    };
-    (profile.taste.setting_interest || []).forEach((code) => {
-      if (code !== "set_no_pref" && SETTING_HINTS[code]) addHint(weights, SETTING_HINTS[code], 1);
-    });
-    (profile.taste.narrative_drivers_ranked || []).forEach((code, index) => {
-      if (DRIVER_HINTS[code]) addHint(weights, DRIVER_HINTS[code], [1, 0.62, 0.34][index] || 0.2);
-    });
-    (profile.taste.desired_emotions_ranked || []).forEach((code, index) => {
-      if (EMOTION_HINTS[code]) addHint(weights, EMOTION_HINTS[code], [1, 0.6, 0.32][index] || 0.2);
-    });
-    (profile.taste.relationship_interest || []).forEach((code) => {
-      if (code !== "rel_no_pref" && RELATION_HINTS[code]) addHint(weights, RELATION_HINTS[code], 0.75);
-    });
-    (profile.taste.theme_interest || []).forEach((code) => {
-      if (code !== "theme_none" && THEME_HINTS[code]) addHint(weights, THEME_HINTS[code], 0.7);
-    });
-    (profile.taste.craft_values_ranked || []).forEach((code, index) => {
-      if (CRAFT_HINTS[code]) addHint(weights, CRAFT_HINTS[code], [1, 0.55, 0.28][index] || 0.1);
-    });
-    const music = getLikertValue("q29");
-    if (music) weights.craft.music += (music - 3) * 0.25;
-    if (profile.taste.setting_interest?.includes("set_everyday")) addHint(weights, SETTING_HINTS.set_everyday, 0.5);
-
-    if (SCOPE_HINTS[profile.taste.preferred_story_scope]) addHint(weights, SCOPE_HINTS[profile.taste.preferred_story_scope], 0.65);
-    if (ARC_HINTS[profile.taste.character_arc]) addHint(weights, ARC_HINTS[profile.taste.character_arc], 0.55);
-    const characterHints = {
-      char_growth: { features: { sports: 0.25, action: 0.2 }, tags: ["成长", "努力"] },
-      char_consistency: { tags: ["严谨", "动机"], features: { mystery: 0.12 } },
-      char_complexity: { features: { dark: 0.35 }, tags: ["复杂", "反英雄"] },
-      char_charm: { features: { comedy: 0.25 }, tags: ["魅力", "角色"] },
-      char_values: { features: { dark: 0.2 }, tags: ["信念", "选择"] },
-      char_relation: { features: { romance: 0.25, healing: 0.2 }, tags: ["关系", "群像"] },
-      char_identify: { features: { healing: 0.3, romance: 0.15 }, tags: ["成长", "人物"] }
-    };
-    (profile.taste.character_values_ranked || []).forEach((code, index) => {
-      if (characterHints[code]) addHint(weights, characterHints[code], [0.7, 0.42, 0.22][index] || 0.1);
-    });
-    (profile.taste.worldbuilding_value || []).forEach((code) => {
-      const hints = {
-        world_rules: { features: { fantasy: 0.3, scifi: 0.25 }, tags: ["设定", "规则"] },
-        world_discovery: { features: { fantasy: 0.35, scifi: 0.3 }, tags: ["冒险", "探索"] },
-        world_metaphor: { features: { dark: 0.25, mystery: 0.2 }, tags: ["隐喻", "现实"] },
-        world_spectacle: { features: { fantasy: 0.35, action: 0.2 }, tags: ["奇观", "史诗"] },
-        world_stage: { features: { romance: 0.2, healing: 0.2 }, tags: ["关系", "人物"] }
-      };
-      if (hints[code]) addHint(weights, hints[code], 0.35);
-    });
-    const castScope = score(profile.taste.cast_scope);
-    if (castScope >= 4) addHint(weights, { tags: ["群像", "多人物"], features: { comedy: 0.2, sports: 0.15 } }, 0.4);
-    else if (castScope <= 2) addHint(weights, { tags: ["人物", "内心"], features: { healing: 0.2 } }, 0.25);
-    const moral = score(profile.taste.protagonist_moral_complexity);
-    if (moral >= 4) addHint(weights, { features: { dark: 0.3 }, tags: ["反英雄", "道德"] }, 0.35);
-    if (score(profile.taste.reality_distance) === 5) addHint(weights, { features: { fantasy: 0.3, scifi: 0.25 } }, 0.5);
-    if (score(profile.taste.reality_distance) === 1) addHint(weights, { features: { healing: 0.4 } }, 0.45);
-    if (profile.taste.narrative_form === "form_non_linear") addHint(weights, { tags: ["非线性", "实验", "意识流"], features: { mystery: 0.25 } }, 0.55);
-    if (profile.taste.narrative_form === "form_episode") addHint(weights, { tags: ["单元剧", "日常"], features: { healing: 0.3, comedy: 0.2 } }, 0.45);
-    if (profile.taste.narrative_form === "form_multi") addHint(weights, { tags: ["群像", "多线"], features: { romance: 0.2 } }, 0.4);
-    if (profile.taste.ambiguity_tolerance === "ambiguity_seek" || profile.taste.ambiguity_tolerance === "ambiguity_like") {
-      addHint(weights, { tags: ["开放", "暧昧", "意识流"], features: { mystery: 0.3, dark: 0.2 } }, 0.55);
-    }
-    if (profile.taste.closure === "closure_bittersweet" || profile.taste.closure === "closure_open") {
-      addHint(weights, { features: { dark: 0.25 }, tags: ["开放结局", "余韵"] }, 0.35);
-    }
-    if (profile.taste.romance_role === "romance_avoid") {
-      weights.avoidance.add("avoid_forced_romance");
-    } else if (profile.taste.romance_role === "romance_center" || profile.taste.romance_role === "romance_important") {
-      addHint(weights, RELATION_HINTS.rel_romance, 0.6);
-    }
-    if (score(profile.taste.comic_relief) >= 4) addHint(weights, { features: { comedy: 0.5 }, tags: ["喜剧", "搞笑", "日常"] }, 0.55);
-    if (score(profile.taste.emotional_intensity) >= 4) addHint(weights, { features: { dark: 0.3, action: 0.25 } }, 0.4);
-    if (score(profile.taste.emotional_intensity) <= 2) addHint(weights, { features: { healing: 0.45 } }, 0.45);
-    if (score(profile.taste.music_importance) >= 4) weights.craft.music += 0.25;
-    if (score(profile.taste.performance_spectacle) >= 4) addHint(weights, { features: { action: 0.5, sports: 0.35 }, tags: ["动作", "舞台", "竞技"] }, 0.55);
-    if (score(profile.taste.formal_experiment_interest) >= 4) addHint(weights, { tags: ["实验", "风格化", "意识流", "视觉"], craft: { visual: 0.45 } }, 0.5);
-    if (score(profile.taste.pace_preference) >= 4) {
-      addHint(weights, { features: { action: 0.4, mystery: 0.25, comedy: 0.2 } }, 0.55);
-    } else if (score(profile.taste.pace_preference) <= 2) {
-      addHint(weights, { features: { healing: 0.5 } }, 0.55);
-    }
-    if (score(profile.taste.mood_vs_progress) >= 4) addHint(weights, { features: { healing: 0.35, mystery: 0.2 } }, 0.4);
-    if (score(profile.taste.mood_vs_progress) <= 2) addHint(weights, { features: { action: 0.3, mystery: 0.2 } }, 0.35);
-
-    (profile.anchors.actual_favorites || []).forEach((favorite) => {
-      const factor = favorite.like_strength === "love" ? 0.85 : favorite.like_strength === "recent_like" ? 0.45 : 0.6;
-      (favorite.reasons || []).forEach((code) => {
-        if (FAVORITE_REASON_HINTS[code]) addHint(weights, FAVORITE_REASON_HINTS[code], factor);
-      });
-    });
-
-    const tradeoffs = profile.taste.tradeoffs || {};
-    if (tradeoffs.surprise_vs_coherence === "tradeoff_surprise") {
-      addHint(weights, { tags: ["反转", "实验", "非线性"], features: { mystery: 0.2 } }, 0.2);
-    } else if (tradeoffs.surprise_vs_coherence === "tradeoff_coherence") {
-      addHint(weights, { tags: ["严谨", "推理", "世界观"] }, 0.2);
-    }
-    if (tradeoffs.relation_vs_plot === "tradeoff_relation") {
-      addHint(weights, { features: { romance: 0.2, healing: 0.2 }, tags: ["关系", "群像"] }, 0.22);
-    } else if (tradeoffs.relation_vs_plot === "tradeoff_plot") {
-      addHint(weights, { features: { mystery: 0.2, action: 0.15 }, tags: ["剧情"] }, 0.2);
-    }
-    if (tradeoffs.finish_vs_aftertaste === "tradeoff_finish") {
-      addHint(weights, { tags: ["完整", "收束"] }, 0.12);
-    } else if (tradeoffs.finish_vs_aftertaste === "tradeoff_aftertaste") {
-      addHint(weights, { tags: ["余韵", "开放"], features: { dark: 0.1 } }, 0.18);
-    }
-
-    if (profile.taste.current_watch_need) weights.currentNeed = profile.taste.current_watch_need;
-    weights.pace = profile.taste.pace_preference;
-    weights.length = profile.taste.length_preference;
-    return weights;
-  }
-
-  function currentNeedWeights(profile) {
-    const map = {
-      m_relax: { healing: 1, comedy: 0.3 },
-      m_excite: { action: 1, sports: 0.4 },
-      m_move: { romance: 0.5, dark: 0.4, healing: 0.3 },
-      m_think: { mystery: 0.7, dark: 0.5 },
-      m_escape: { fantasy: 0.7, scifi: 0.6, action: 0.3 },
-      m_inspire: { fantasy: 0.3, visual: 0.2 }
-    };
-    const vector = emptyFeatureVector();
-    (profile.context.current_watch_need || []).forEach((code) => {
-      Object.entries(map[code] || {}).forEach(([feature, value]) => {
-        if (vector[feature] !== undefined) vector[feature] += value;
-      });
-    });
-    return vector;
-  }
-
-  function featureScore(features, vector) {
-    let total = 0;
-    let weight = 0;
-    Object.entries(vector).forEach(([key, value]) => {
-      if (!value) return;
-      total += (features[key] || 0) * value;
-      weight += value;
-    });
-    return weight ? total / weight : 0.5;
-  }
-
-  function tagMatchScore(anime, tagWeights) {
-    let total = 0;
-    let matched = 0;
-    tagWeights.forEach((weight, tag) => {
-      total += weight;
-      if (anime.tags.some((candidate) => candidate.includes(tag) || tag.includes(candidate))) matched += weight;
-    });
-    return total ? matched / total : 0.5;
-  }
-
-  function animeFeatureVector(anime) {
-    return anime.features || emptyFeatureVector();
-  }
-
-  function featureSimilarity(a, b) {
-    const keys = Object.keys(emptyFeatureVector());
-    const av = animeFeatureVector(a);
-    const bv = animeFeatureVector(b);
-    let dot = 0;
-    let an = 0;
-    let bn = 0;
-    keys.forEach((key) => {
-      const x = Number(av[key] || 0);
-      const y = Number(bv[key] || 0);
-      dot += x * y;
-      an += x * x;
-      bn += y * y;
-    });
-    return an && bn ? dot / Math.sqrt(an * bn) : 0;
-  }
-
-  function tagSimilarity(a, b) {
-    const at = new Set(a.tags);
-    const bt = new Set(b.tags);
-    if (!at.size || !bt.size) return 0;
-    const intersection = [...at].filter((tag) => bt.has(tag)).length;
-    return intersection / new Set([...at, ...bt]).size;
-  }
-
-  function candidateToCandidateSimilarity(a, b) {
-    return featureSimilarity(a, b) * 0.7 + tagSimilarity(a, b) * 0.3;
-  }
-
-  function favoriteWeight(favorite) {
-    return favorite.like_strength === "love" ? 1 : favorite.like_strength === "recent_like" ? 0.65 : 0.8;
-  }
-
-  function anchorAnimeForEntry(entry) {
-    const matched = catalogAnimeForRef(entry.external_ref);
-    if (matched) return matched;
-    const matches = searchCatalog(entry.title_raw);
-    return matches[0]?.anime || null;
-  }
-
-  function buildAnchors(favorites) {
-    const anchors = [];
-    favorites.forEach((favorite) => {
-      const series = favorite.external_ref?.provider === "series" && ANIME_SERIES.byId.get(favorite.external_ref.provider_id);
-      const works = series ? ANIME_CATALOG.filter((anime) => series.members.includes(anime.id)) : [anchorAnimeForEntry(favorite)].filter(Boolean);
-      works.forEach((anime) => anchors.push({ anime, weight: favoriteWeight(favorite) / works.length,
-        source: "q40", title: favorite.title_raw, reasons: favorite.reasons }));
-    });
-    state.legacyRecords.forEach((record) => {
-      const title = record.actualFavorite?.title || record.actual_favorites?.[0]?.title_raw;
-      if (!title) return;
-      const matched = searchCatalog(title)[0]?.anime;
-      if (matched && !anchors.some((anchor) => anchor.anime.id === matched.id)) {
-        anchors.push({ anime: matched, weight: 0.4, source: "migration", title, reasons: [] });
-      }
-    });
-    state.ratings.forEach((rating) => {
-      if (!rating.external_ref || rating.external_ref.lookup_status !== "matched") return;
-      if (rating.sentiment === "dislike" || rating.rating === 1) return;
-      const anime = catalogAnimeForRef(rating.external_ref);
-      if (!anime) return;
-      if (anchors.some((anchor) => anchor.anime.id === anime.id)) return;
-      const weight = rating.rating >= 4 || rating.sentiment === "like" ? 0.75 : 0.3;
-      anchors.push({ anime, weight, source: "rating", title: anime.title, reasons: [] });
-    });
-    return anchors;
-  }
-
-  function anchorAffinity(anime, anchors) {
-    if (!anchors.length) return 0.42;
-    let total = 0;
-    let weight = 0;
-    anchors.forEach((anchor) => {
-      total += candidateToCandidateSimilarity(anime, anchor.anime) * anchor.weight;
-      weight += anchor.weight;
-    });
-    return weight ? clamp(total / weight, 0, 1) : 0.42;
-  }
-
-  function avoidancePenalty(anime, weights) {
-    let penalty = 0;
-    weights.avoidance.forEach((code) => {
-      const rule = AVOID_RULES[code];
-      if (!rule) return;
-      const tagHit = (rule.tags || []).some((tag) => anime.tags.some((candidate) => candidate.includes(tag) || tag.includes(candidate)));
-      const featureHit = Object.entries(rule.features || {}).some(([feature, threshold]) => (anime.features?.[feature] || 0) >= threshold);
-      if (tagHit || featureHit) penalty += rule.amount || 0.1;
-    });
-    if (weights.paceAvoidance.size) {
-      const pace = Number(anime.paceProxy || 3);
-      if (weights.paceAvoidance.has("pace_static") && (anime.features?.healing || 0) > 0.62) penalty += 0.08;
-      if (weights.paceAvoidance.has("pace_rushed") && (anime.features?.action || 0) > 0.8) penalty += 0.08;
-    }
-    return clamp(penalty, 0, 0.55);
-  }
-
-  function hardExcluded(anime) {
-    const feedback = state.feedback[anime.id];
-    if (feedback && ["unsuitable", "not_interested"].includes(feedback.status)) return true;
-    const rating = state.ratings.find((item) => sameWork(item.external_ref, externalRefForAnime(anime)));
-    if (rating && (rating.sentiment === "dislike" || rating.status === "dropped" || (rating.rating && Number(rating.rating) <= 2))) return true;
-    return false;
-  }
-
-  function contextScore(anime, profile) {
-    const need = currentNeedWeights(profile);
-    const needScore = featureScore(anime.features, need);
-    let entryFit = 0.5;
-    const entry = profile.context.entry_threshold;
-    const popularity = clamp(Number(anime.quality?.malScoredBy || 0) / 900000, 0, 1);
-    if (entry === "entry_immediate") entryFit = popularity;
-    else if (entry === "entry_gradual") entryFit = 0.5 + popularity * 0.25;
-    else if (entry === "entry_patient") entryFit = 0.45;
-    const experience = profile.context.watch_experience_band;
-    const experienceFit = experience === "a_0_5" ? popularity * 0.8 + 0.1 : 0.5;
-    const episodes = Number(anime.episodes || 0);
-    const isFilm = String(anime.format || "").toUpperCase() === "MOVIE";
-    const length = profile.taste.length_preference;
-    let lengthFit = 0.5;
-    if (length === "length_short") lengthFit = isFilm || (episodes > 0 && episodes <= 26) ? 1 : 0.2;
-    else if (length === "length_medium") lengthFit = !isFilm && episodes > 12 && episodes <= 60 ? 1 : 0.4;
-    else if (length === "length_long") lengthFit = !isFilm && episodes >= 40 ? 1 : 0.3;
-    else if (length === "length_film") lengthFit = isFilm ? 1 : 0.25;
-    return clamp(needScore * 0.48 + entryFit * 0.2 + experienceFit * 0.12 + lengthFit * 0.2, 0, 1);
-  }
-
-  function craftScore(anime, weights) {
-    const visual = anime.signals?.visual ?? 0.5;
-    const music = anime.signals?.music ?? 0.5;
-    const craft = weights.craft;
-    const total = (craft.visual || 0) + (craft.music || 0);
-    if (!total) return 0.5;
-    return clamp((visual * (craft.visual || 0) + music * (craft.music || 0)) / total, 0, 1);
-  }
-
-  function qualityTieBreak(anime) {
-    return clamp((Number(anime.quality?.communityScore || 7.5) - 7.2) / 2.2, 0, 1);
-  }
-
-  function clusterKey(anime) {
-    const features = Object.entries(anime.features || {}).sort((a, b) => b[1] - a[1]);
-    const top = features.slice(0, 2).filter(([, value]) => value > 0.2).map(([key]) => key);
-    return top.length ? top.join("+") : "balanced";
-  }
-
-  function buildEvidence(anime, profile, anchors, weights) {
-    const evidence = [];
-    const matchedAnchor = anchors.find((anchor) => candidateToCandidateSimilarity(anime, anchor.anime) > 0.34);
-    if (matchedAnchor) {
-      const sharedTags = anime.tags.filter((tag) => matchedAnchor.anime.tags.some((other) => other.includes(tag) || tag.includes(other))).slice(0, 3);
-      evidence.push({
-        text: `与你喜欢的《${matchedAnchor.title}》在${sharedTags.length ? `「${sharedTags.join("」「")}」` : "整体气质"}上有可追溯的相近，不是只按同题材判断。`,
-        source: "anchor"
-      });
-    }
-
-    const rankedDrivers = profile.taste.narrative_drivers_ranked || [];
-    if (rankedDrivers[0]) {
-      const label = codeLabel("q13", rankedDrivers[0]);
-      const hint = DRIVER_HINTS[rankedDrivers[0]];
-      const matchedTags = hint ? anime.tags.filter((tag) => hint.tags.some((target) => tag.includes(target) || target.includes(tag))) : [];
-      if (matchedTags.length) {
-        evidence.push({ text: `你在 q13 把「${label}」排在追看驱动第一位；本作标签中的「${matchedTags.slice(0, 2).join("、")}」与它对应。`, source: "q13" });
-      }
-    }
-
-    const settings = profile.taste.setting_interest || [];
-    for (const code of settings) {
-      const hint = SETTING_HINTS[code];
-      if (!hint) continue;
-      const matchedTags = anime.tags.filter((tag) => hint.tags.some((target) => tag.includes(target) || target.includes(tag)));
-      if (matchedTags.length) {
-        evidence.push({ text: `你在 q09 选择了「${codeLabel("q09", code)}」；本作的「${matchedTags[0]}」标签属于这个方向。`, source: "q09" });
-        break;
-      }
-    }
-
-    const relations = profile.taste.relationship_interest || [];
-    for (const code of relations) {
-      const hint = RELATION_HINTS[code];
-      if (!hint) continue;
-      const matchedTags = anime.tags.filter((tag) => hint.tags.some((target) => tag.includes(target) || target.includes(tag)));
-      if (matchedTags.length) {
-        evidence.push({ text: `你在 q19 表示「${codeLabel("q19", code)}」容易打动你；本作包含「${matchedTags[0]}」的关系/群像线索。`, source: "q19" });
-        break;
-      }
-    }
-
-    const craft = profile.taste.craft_values_ranked || [];
-    if (craft[0] && ["craft_music", "craft_animation", "craft_direction", "craft_visual_style"].includes(craft[0])) {
-      const isMusic = craft[0] === "craft_music";
-      const signal = Number(isMusic ? anime.signals?.music : anime.signals?.visual) || 0.5;
-      if (signal >= 0.55) {
-        evidence.push({ text: `你在 q28 把「${codeLabel("q28", craft[0])}」放在制作面向第一位；本作的${isMusic ? "音乐" : "视觉/演出"}信号相对突出。`, source: "q28" });
-      }
-    }
-
-    if (evidence.length < 2) {
-      const emotions = profile.taste.desired_emotions_ranked || [];
-      if (emotions[0]) {
-        const labels = codeLabel("q23", emotions[0]);
-        evidence.push({ text: `你在 q23 把「${labels}」放在想带走的感受前列；本作的整体气质与这类体验有交集。`, source: "q23" });
-      }
-    }
-    if (evidence.length < 2) {
-      const topFeature = Object.entries(anime.features || {}).sort((a, b) => b[1] - a[1])[0];
-      if (topFeature) {
-        evidence.push({ text: `本作在候选描述里最突出的方向是「${topFeature[0]}」相关标签；证据强度低于明确作品锚点，仍作为一条可追溯的弱证据。`, source: "candidate" });
-      }
-    }
-    if (evidence.length < 2) {
-      evidence.push({ text: `本作在「${clusterKey(anime)}」风格上和你的审美维度有交集。`, source: "quality_gate" });
-    }
-    return evidence.slice(0, 4);
-  }
-
-  const workDimensions = new Map(ANIME_CATALOG.map((anime) => [anime.id, ANIME_TASTE.workDimensions(anime)]));
-
-  function buildRecommendations(profile, favorites, { seed = "", exploreIndex } = {}) {
-    const anchors = buildAnchors(favorites);
-    const weights = buildTasteWeights(profile);
-    const favoriteIds = new Set(
-      anchors.filter((anchor) => anchor.source === "q40").map((anchor) => anchor.anime.id)
-    );
-    const eligible = ANIME_CATALOG;
-    const userAxes = profile.dimensions || ANIME_TASTE.userDimensions(state.answers);
-    const interest = WATCH_MODEL.preferenceTags(profile.preferences);
-    const knownSeries = new Set(favorites.filter(({ external_ref }) => external_ref?.provider === "series")
-      .map(({ external_ref }) => external_ref.provider_id));
-    const filtered = [];
-    const scored = [];
-
-    eligible.forEach((anime) => {
-      const series = ANIME_SERIES.identify(null, anime);
-      if (favoriteIds.has(anime.id) || knownSeries.has(series?.id)) {
-        filtered.push({ animeId: anime.id, reason: "already_in_favorites" });
-        return;
-      }
-      if (hardExcluded(anime)) {
-        filtered.push({ animeId: anime.id, reason: "hard_exclusion" });
-        return;
-      }
-      const dimensionMatch = ANIME_TASTE.affinity(userAxes, workDimensions.get(anime.id));
-      const tagMatch = tagMatchScore(anime, weights.tags);
-      const genreMatch = featureScore(anime.features, weights.features);
-      const combinedTaste = dimensionMatch * 0.46 + genreMatch * 0.37 + tagMatch * 0.17;
-      const preferenceFit = interest.length ? interest.filter((tag) =>
-        anime.tags.some((value) => normalizeTitle(value).includes(normalizeTitle(tag)))).length / interest.length : 0;
-      const taste = interest.length ? combinedTaste * 0.93 + preferenceFit * 0.07 : combinedTaste;
-      const anchor = anchorAffinity(anime, anchors);
-      const context = contextScore(anime, profile);
-      const craft = craftScore(anime, weights);
-      const quality = qualityTieBreak(anime);
-      const avoidance = avoidancePenalty(anime, weights);
-      const seenFeedback = state.feedback[anime.id];
-      const repeat = seenFeedback?.status === "seen" ? CONFIG.repeatPenalty : 0;
-      const score = clamp(
-        anchor * CONFIG.anchor +
-        taste * CONFIG.taste +
-        context * CONFIG.context +
-        craft * CONFIG.craft +
-        quality * CONFIG.quality -
-        avoidance -
-        repeat,
-        0,
-        1
-      );
-      scored.push({
-        anime,
-        score,
-        seriesId: series?.id,
-        dimensionMatch,
-        genreMatch,
-        anchor,
-        taste,
-        context,
-        craft,
-        quality,
-        avoidance,
-        repeat,
-        clusterKey: clusterKey(anime),
-        evidence: [],
-        source: "核心匹配"
-      });
-    });
-
-    scored.sort((a, b) => b.score - a.score || (b.anime.quality?.communityScore || 0) - (a.anime.quality?.communityScore || 0));
-    const selected = [];
-    const remaining = () => scored.filter((entry) => !selected.includes(entry) &&
-      !selected.some((chosen) => chosen.seriesId && chosen.seriesId === entry.seriesId));
-    while (selected.length < 2 && scored.length) {
-      const pool = remaining();
-      if (!pool.length) break;
-      let best = null;
-      let bestAdjusted = -Infinity;
-      pool.forEach((entry) => {
-        const similarity = selected.length ? Math.max(...selected.map((picked) => candidateToCandidateSimilarity(entry.anime, picked.anime))) : 0;
-        const sameCluster = selected.some((picked) => picked.clusterKey === entry.clusterKey) ? 0.04 : 0;
-        const adjusted = entry.score - similarity * CONFIG.diversityPenalty - sameCluster;
-        if (adjusted > bestAdjusted) {
-          bestAdjusted = adjusted;
-          best = entry;
-        }
-      });
-      if (!best) break;
-      best.scoreAdjusted = bestAdjusted;
-      best.evidence = buildEvidence(best.anime, profile, anchors, weights);
-      selected.push(best);
-    }
-
-    const unexplored = remaining();
-    const alternatives = unexplored.filter((entry) =>
-      entry.dimensionMatch >= 0.64 && entry.genreMatch >= 0.17 && entry.avoidance < 0.13 &&
-      (entry.score >= selected[0].score - 0.23 || entry.dimensionMatch >= 0.78));
-    const index = exploreIndex ?? [...seed].reduce((value, char) => (Math.imul(value, 31) + char.charCodeAt(0)) >>> 0, 0);
-    const discovery = alternatives.length ? alternatives[index % alternatives.length] : unexplored[0];
-    if (discovery) {
-      discovery.source = "探索推荐";
-      discovery.evidence = buildEvidence(discovery.anime, profile, anchors, weights);
-      selected.push(discovery);
-    }
-
-    const top = selected.map((entry, index) => ({
-      ...entry,
-      rank: index + 1,
-      matchPercent: Math.round(clamp(54 + entry.score * 43, 54, 98))
-    }));
-
-    return {
-      top,
-      candidateCount: eligible.length,
-      exploration: { index, candidates: alternatives.map((entry) => entry.anime.id) },
-      filtered,
-      anchors: anchors.map((anchor) => ({ title: anchor.title, animeId: anchor.anime.id, source: anchor.source })),
-      profile,
-      config: CONFIG,
-      generatedAt: new Date().toISOString()
-    };
   }
 
   /* ------------------------------------------------------------------ */
@@ -2384,7 +1747,16 @@
     dom.profileUncertainty.textContent = matched ? `${matched} 部本命番已定位` : "";
 
     dom.recommendations.replaceChildren();
-    if (!result.top.length) {
+    if (result.online) {
+      experience.renderOnlinePicks(dom.recommendations, result.items, { rate: reviewWork });
+      if (result.pending || !result.items.length) {
+        const notice = document.createElement("p");
+        notice.className = "empty-state";
+        notice.textContent = result.pending ? "正在按你的口味搜索 Bangumi…" : result.error || "这次暂时没有匹配的作品。";
+        dom.recommendations.append(notice);
+        if (!result.pending) dom.recommendations.append(textButton("重新查询推荐", () => recalculateRecommendations()));
+      }
+    } else if (!result.top.length) {
       const empty = document.createElement("p");
       empty.className = "empty-state";
       empty.textContent = "候选都被你的排除项过滤了。可以去树洞调整评价，或解除一个“不适合”的标记后再试。";
@@ -2393,7 +1765,7 @@
       result.top.forEach((entry, index) => dom.recommendations.append(renderRecommendationCard(entry, index)));
     }
 
-    $("#next-exploration").hidden = !state.record || (result.exploration?.candidates.length || 0) < 2;
+    $("#next-exploration").hidden = result.online || !state.record || (result.exploration?.candidates.length || 0) < 2;
     renderResultDetails(result, profile);
     if (profile.dimensions) dom.resultDetails.append(experience.radarPanel(Object.fromEntries(
       Object.entries(ANIME_TASTE.AXES).map(([key, label]) => [label, profile.dimensions[key] ?? 50])), 100), dimensionsList(profile.dimensions));
@@ -2701,9 +2073,10 @@
     const rows = [
       ["短期观看状态", currentNeed.length ? currentNeed.join("、") : "无特别目的"],
       ["真实作品锚点", (profile.anchors.actual_favorites || []).map((item) => `《${item.title_raw}》`).join(" ") || "未填写"],
-      ["匹配到的候选锚点", result.anchors?.length ? result.anchors.map((item) => `《${item.title}》`).join(" ") : "暂无"],
-      ["候选数量", `${result.candidateCount} 部参与匹配，${result.filtered.length} 部被硬排除`],
-      ["算法配置", `${CONFIG.version} · 锚点 ${Math.round(CONFIG.anchor * 100)}% / 直接审美 ${Math.round(CONFIG.taste * 100)}% / 情境 ${Math.round(CONFIG.context * 100)}%`]
+      ...(result.online ? [["推荐来源", "Bangumi 作品资料 · 优先检索 2012 年及以后首播作品"]]
+        : [["匹配到的候选锚点", result.anchors?.length ? result.anchors.map((item) => `《${item.title}》`).join(" ") : "暂无"],
+          ["候选数量", `${result.candidateCount} 部参与匹配，${result.filtered.length} 部被硬排除`],
+          ["算法配置", CONFIG.version]])
     ];
     rows.forEach(([label, value]) => {
       const row = document.createElement("div");
@@ -2716,16 +2089,32 @@
       block.append(row);
     });
     dom.resultDetails.append(block);
-    const note = document.createElement("p");
-    note.className = "rec-component-note";
-    note.textContent = "权重是初始可配置值，未经过大样本验证；同一输入和同一配置版本可重现排序。";
-    dom.resultDetails.append(note);
   }
 
   function workLink(ref, text) {
     const anchor = document.createElement("a");
     const title = ref?.title_display || ref?.title_canonical || "";
     anchor.textContent = text || title;
+    const params = new URLSearchParams();
+    if (["bangumi", "bangumi-series"].includes(ref?.provider) && /^\d+$/.test(ref.provider_id)) {
+      params.set("work", ref.provider_id);
+    } else {
+      params.set("workTitle", title);
+      if (ref?.year) params.set("year", ref.year);
+    }
+    anchor.href = `?${params}`;
+    anchor.addEventListener("click", (event) => {
+      if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+      event.preventDefault();
+      openWork(ref);
+    });
+    return anchor;
+  }
+
+  function externalWorkLink(ref, text = "在 Bangumi 查看 ↗") {
+    const anchor = document.createElement("a");
+    const title = ref?.title_display || ref?.title_canonical || "";
+    anchor.textContent = text;
     try {
       const url = new URL(ref?.canonical_url);
       if (url.protocol !== "https:" || !["bgm.tv", "anilist.co", "myanimelist.net"].includes(url.hostname)) throw new Error();
@@ -2736,6 +2125,27 @@
     anchor.target = "_blank";
     anchor.rel = "noopener noreferrer";
     return anchor;
+  }
+
+  function openWork(ref) {
+    if (!ref) return;
+    if (state.screen !== "tree" || state.treeTab !== "work") state.workReturn = { screen: state.screen, tab: state.treeTab };
+    state.currentWork = ref;
+    openTree("work");
+  }
+
+  function reviewWork(ref, watched = false, review, love) {
+    openTree("library");
+    if (state.screen !== "tree" || state.treeTab !== "library") return;
+    const existing = state.ratings.find((rating) => sameWork(ref, rating.external_ref));
+    openReviewEditor(ref, dom.treeContent, existing, watched ? { ...existing, status: "seen", review: review || existing?.review, love } : null);
+  }
+
+  function openBoard(ref) {
+    const id = ref.series_id || ref.provider_id;
+    if (!/^\d{1,12}$/.test(id || "")) return;
+    state.currentBoard = { id, title: ref.series_title || ref.title_display || "" };
+    openTree("board");
   }
 
   async function apiJson(path, payload, timeout = 8000) {
@@ -2753,8 +2163,7 @@
     const taste = profile.taste;
     const consentSimilar = true;
     const favoriteRefs = (record.actual_favorites || []).map((entry) => entry.external_ref || manualRef(entry.title_raw));
-    const weights = buildTasteWeights(profile);
-    const alreadyKnown = [...result.top.map(({ anime }) => externalRefForAnime(anime)), ...favoriteRefs,
+    const alreadyKnown = [...(result.items || result.top.map(({ anime }) => externalRefForAnime(anime))), ...favoriteRefs,
       ...state.ratings.filter((rating) => rating.status !== "want" || rating.sentiment === "dislike").map((rating) => rating.external_ref)];
     try {
       const data = await apiJson("/api/community", {
@@ -2772,8 +2181,7 @@
       return [...(data.similar || []), ...(data.community || [])].find((item) => {
         const ref = item.external_ref;
         if (!ref || alreadyKnown.some((known) => sameWork(ref, known))) return false;
-        const anime = catalogAnimeForRef(ref);
-        return !anime || (!hardExcluded(anime) && avoidancePenalty(anime, weights) === 0);
+        return Number(ref.year) >= 2012;
       }) || null;
     } catch (error) {
       console.warn("Community recommendation unavailable:", error);
@@ -2800,10 +2208,7 @@
     rate.type = "button";
     rate.className = "outline-button";
     rate.textContent = "写评价";
-    rate.addEventListener("click", () => {
-      openTree("library");
-      openReviewEditor(pick.external_ref, dom.treeContent);
-    });
+    rate.addEventListener("click", () => reviewWork(pick.external_ref));
     card.append(info, experience.wantButton(pick.external_ref), rate);
     dom.communityList.append(card);
   }
@@ -2814,7 +2219,7 @@
 
   function openTree(tab = "reviews") {
     if (state.screen === "loading") return;
-    if (!state.account && !state.guestDashboard && !["data", "thread", "shared"].includes(tab)) {
+    if (!state.account && !state.guestDashboard && !["data", "thread", "shared", "work", "board"].includes(tab)) {
       if (state.result || tab === "library") openAccount({ message: "登录后可以使用追番清单和树洞互动。" });
       return;
     }
@@ -2833,10 +2238,18 @@
   function closeTree() {
     const tab = state.treeTab;
     const previous = state.treeParent;
+    if (tab === "work" && state.workReturn) {
+      if (state.workReturn.screen === "tree" && state.workReturn.tab !== "work") openTree(state.workReturn.tab);
+      else if (state.workReturn.screen === "result" && state.result) showScreen("result");
+      else handleGoHome();
+      return;
+    }
+    if (tab === "library" && ["work", "wanted", "watched", "board"].includes(previous)) { openTree(previous); return; }
     if (state.account || state.guestDashboard) {
       if (tab === "thread" && previous === "history") openTree("history");
       else if (tab === "library" && previous === "history") openTree("history");
-      else if (["library", "thread"].includes(tab)) openTree("reviews");
+      else if (tab === "thread" && state.currentBoard) openTree("board");
+      else if (["library", "thread", "board"].includes(tab)) openTree("reviews");
       else openTree("profile");
       return;
     }
@@ -2846,14 +2259,14 @@
   }
 
   function renderTree() {
-    const community = ["reviews", "library", "thread"].includes(state.treeTab);
+    const community = ["reviews", "library", "thread", "board"].includes(state.treeTab);
     const personal = ["profile", "history", "settings", "admin"].includes(state.treeTab);
     const watchlist = ["wanted", "watched"].includes(state.treeTab);
     const active = community ? "reviews" : watchlist ? "wanted" : personal ? "profile" : state.treeTab;
-    const dashboard = community || personal || watchlist || state.treeTab === "discover";
+    const dashboard = community || personal || watchlist || ["discover", "search", "work"].includes(state.treeTab);
     const hub = $(".hub-pieces");
     hub.hidden = !dashboard || (!state.account && !state.guestDashboard);
-    dom.treeBackButton.hidden = !["library", "thread", "shared", "data"].includes(state.treeTab);
+    dom.treeBackButton.hidden = !["library", "thread", "shared", "data", "work", "board"].includes(state.treeTab);
     for (const piece of $$("[data-area]", hub)) {
       const locked = !state.account && ["wanted", "discover"].includes(piece.dataset.area);
       piece.classList.toggle("requires-account", locked);
@@ -2872,6 +2285,9 @@
     });
     dom.treeContent.replaceChildren();
     if (state.treeTab === "thread") experience.renderThread(dom.treeContent, state.currentPost);
+    else if (state.treeTab === "work") experience.renderWorkDetail(dom.treeContent, state.currentWork);
+    else if (state.treeTab === "search") experience.renderSearch(dom.treeContent);
+    else if (state.treeTab === "board") renderBoard(dom.treeContent);
     else if (state.treeTab === "discover") experience.renderDiscovery(dom.treeContent);
     else if (watchlist) experience.renderWatchlist(dom.treeContent, state.treeTab);
     else if (state.treeTab === "shared") experience.renderShared(dom.treeContent, state.shareToken);
@@ -2979,13 +2395,14 @@
       const empty = document.createElement("div");
       empty.className = "tree-empty";
       const text = document.createElement("p");
-      text.textContent = "还没有可查看的 v4 问卷档案。先完成 40 道题，真实喜欢作品和推荐反馈会一起出现在这里。";
+      text.textContent = state.accountLoading ? "正在读取账号档案…" : "完成测评后，你的画像和推荐会出现在这里。";
       const start = document.createElement("button");
       start.type = "button";
       start.className = "primary-button";
       start.textContent = "开始 40 题问卷";
       start.addEventListener("click", handleRetake);
-      empty.append(text, start);
+      empty.append(text);
+      if (!state.accountLoading) empty.append(start);
       container.append(empty);
       return;
     }
@@ -3006,7 +2423,9 @@
       chip.textContent = item.text;
       evidence.append(chip);
     });
-    intro.append(title2, summary, evidence, dimensionsList(current.record?.analysis?.dimensions || ANIME_TASTE.userDimensions(current.record?.answers || {})));
+    const dimensions = current.record?.analysis?.dimensions || ANIME_TASTE.userDimensions(current.record?.answers || {});
+    intro.append(title2, summary, evidence, experience.radarPanel(Object.fromEntries(
+      Object.entries(ANIME_TASTE.AXES).map(([key, label]) => [label, dimensions[key] ?? 50])), 100), dimensionsList(dimensions));
     container.append(intro);
 
     const context = document.createElement("section");
@@ -3216,7 +2635,8 @@
     head.append(actions);
     const tabs = document.createElement("div");
     tabs.className = "account-modes";
-    for (const [view, label] of [["results", "测评结果"], ["posts", "管理发言"], ["users", "用户与处罚"], ["tags", "标签审核"]]) {
+    for (const [view, label] of [["dashboard", "图表总览"], ["results", "测评结果"], ["posts", "管理发言"],
+      ["users", "用户与处罚"], ["feedback", "站点反馈"], ["tags", "标签审核"]]) {
       const button = textButton(label, () => {
         state.adminView = view;
         renderTree();
@@ -3225,8 +2645,114 @@
       tabs.append(button);
     }
     container.append(head, tabs);
-    if (state.adminView === "tags") renderTagReview(container);
+    if (state.adminView === "dashboard") renderAdminMetrics(container);
+    else if (state.adminView === "feedback") renderAdminFeedback(container);
+    else if (state.adminView === "tags") renderTagReview(container);
     else renderPagedPosts(container, { admin: true, view: state.adminView });
+  }
+
+  function bars(title, rows, max, vertical = false) {
+    const section = document.createElement("section");
+    section.className = "tree-card dashboard-chart";
+    section.append(titleElement(title));
+    const graph = document.createElement("div");
+    graph.className = vertical ? "chart-columns" : "chart-bars";
+    for (const { label, value } of rows) {
+      const row = document.createElement("div");
+      row.className = "chart-point";
+      const name = document.createElement("span");
+      name.textContent = label;
+      const meter = document.createElement("meter");
+      meter.min = 0;
+      meter.max = Math.max(1, max);
+      meter.value = value;
+      meter.setAttribute("aria-label", label);
+      const total = document.createElement("strong");
+      total.textContent = value;
+      row.append(name, meter, total);
+      graph.append(row);
+    }
+    if (!rows.length) section.append("暂无数据");
+    else section.append(graph);
+    return section;
+  }
+
+  async function renderAdminMetrics(container) {
+    const area = document.createElement("div");
+    area.textContent = "正在汇总数据…";
+    container.append(area);
+    try {
+      const data = await apiJson("/api/admin-metrics", undefined, 12000);
+      if (!area.isConnected) return;
+      const totals = document.createElement("dl");
+      totals.className = "dashboard-totals";
+      for (const [key, label] of Object.entries({ accounts: "注册账号", assessments: "测评结果", publicReviews: "公开评价",
+        watchlist: "追番记录", generalPosts: "散贴", feedback: "收到反馈", pendingFeedback: "待处理反馈" })) {
+        const cell = document.createElement("div");
+        const name = document.createElement("dt");
+        const value = document.createElement("dd");
+        name.textContent = label;
+        value.textContent = data.totals[key];
+        cell.append(name, value);
+        totals.append(cell);
+      }
+      area.replaceChildren(totals, textButton("导出图表数据 JSON", () =>
+        downloadBlob(JSON.stringify(data, null, 2), "anime-soul-dashboard.json", "application/json")));
+      for (const [key, label, max] of [["assessments", "近 14 天的测评"], ["ratings", "近 14 天的评价"], ["feedback", "近 14 天的反馈"],
+        ["preferences", "测评维度均值", 100], ["dimensions", "树洞评价维度均值", 10], ["feedbackKinds", "反馈分类"]]) {
+        const rows = data[key];
+        area.append(bars(label, rows, max || Math.max(1, ...rows.map(({ value }) => value)), rows.length === 14));
+      }
+    } catch (error) { area.textContent = error.message; }
+  }
+
+  function renderAdminFeedback(container) {
+    const filters = document.createElement("div");
+    filters.className = "tree-actions";
+    const states = labeledSelect("处理状态", [{ code: "", label: "全部" }, { code: "open", label: "待处理" },
+      { code: "handled", label: "已处理" }], "open");
+    const kinds = { bug: "功能问题", data: "番剧资料", idea: "功能建议", other: "其他" };
+    const categories = labeledSelect("反馈类型", [{ code: "", label: "全部" }, ...Object.entries(kinds).map(([code, label]) => ({ code, label }))], "");
+    filters.append(states.wrap, categories.wrap);
+    const list = document.createElement("div");
+    const more = textButton("加载更多", () => load(page + 1));
+    more.hidden = true;
+    container.append(filters, list, more);
+    let page = 0;
+    let sequence = 0;
+    async function load(next) {
+      const version = ++sequence;
+      if (!next) list.textContent = "正在读取反馈…";
+      const params = new URLSearchParams({ state: states.select.value, kind: categories.select.value, page: next });
+      try {
+        const data = await apiJson(`/api/site-feedback?${params}`);
+        if (!list.isConnected || version !== sequence) return;
+        if (!next) list.replaceChildren();
+        if (!next && !data.items.length) list.textContent = "暂无符合条件的反馈。";
+        for (const item of data.items) {
+          const card = document.createElement("article");
+          card.className = "tree-card";
+          card.append(titleElement(kinds[item.kind], `${formatDate(item.created)} · ${item.author ? "@" + item.author : "访客"}`));
+          const message = document.createElement("p");
+          message.className = "feedback-message";
+          message.textContent = item.message;
+          const action = textButton(item.state === "open" ? "标记已处理" : "移回待处理", async () => {
+            action.disabled = true;
+            try {
+              await apiJson("/api/site-feedback", { action: "review", id: item.id, state: item.state === "open" ? "handled" : "open" });
+              await load(0);
+            } catch (error) { showToast(error.message); action.disabled = false; }
+          });
+          card.append(message, action);
+          list.append(card);
+        }
+        page = next;
+        more.hidden = !data.more;
+      } catch (error) { list.textContent = error.message; }
+    }
+    states.select.addEventListener("change", () => load(0));
+    categories.select.addEventListener("change", () => load(0));
+    load(0);
   }
 
   async function renderTagReview(container) {
@@ -3359,62 +2885,24 @@
     return fragment;
   }
 
-  async function recalculateRecommendations({ nextExplore = false } = {}) {
-    const profile = state.result?.profile || state.record?.derived_profile;
-    if (!profile || !state.record) {
-      showToast("还没有可重算的完整问卷。");
-      return;
-    }
-    if (!Object.keys(state.answers).length && state.record.answers) {
-      state.answers = {};
-      QUESTIONS.slice(0, 39).forEach((question) => {
-        if (state.record.answers[question.id] !== undefined) state.answers[question.id] = state.record.answers[question.id];
-      });
-    }
-    const favorites = state.record.actual_favorites || [];
-    const result = buildRecommendations(profile, favorites, {
-      seed: state.responseId || state.record.response_id,
-      exploreIndex: nextExplore ? (state.result.exploration.index + 1)
-        : state.result?.exploration?.index ?? state.record.recommendation_snapshot?.explore_index
-    });
-    state.result = { ...result, profile };
-    if (state.record.recommendation_snapshot) {
-      if (!Array.isArray(state.record.recommendation_snapshots)) state.record.recommendation_snapshots = [];
-      state.record.recommendation_snapshots = [...state.record.recommendation_snapshots,
-        state.record.recommendation_snapshot].slice(-5);
-    }
-    state.record.recommendation_snapshot = {
-      algorithm_version: ALGORITHM_VERSION,
-      config_version: `${ALGORITHM_VERSION}:initial`,
-      computed_at: new Date().toISOString(),
-      weights: CONFIG,
-      top: result.top.map((entry) => ({
-        rank: entry.rank,
-        anime_id: entry.anime.id,
-        title: entry.anime.title,
-        external_ref: externalRefForAnime(entry.anime),
-        score: Number(entry.score.toFixed(4)),
-        source: entry.source,
-        cluster_key: entry.clusterKey,
-        evidence: entry.evidence.map((item) => item.text)
-      })),
-      explore_index: result.exploration.index,
-      candidates_considered: result.candidateCount,
-      filtered: result.filtered
-    };
-    const index = state.localRecords.findIndex((item) => item.response_id === state.record.response_id);
-    if (index >= 0) {
-      state.localRecords[index] = state.record;
-      if (!state.account) saveLocalJson(RECORDS_KEY, state.localRecords);
-    }
+  async function recalculateRecommendations() {
     const record = state.record;
-    const pick = await selectCommunityPick(state.result, record);
-    if (record !== state.record) return;
-    if (pick) record.recommendation_snapshot.community_pick = pick;
-    await persistProfileEdit(record);
-    saveSession();
-    renderResult(state.result);
+    const profile = state.result?.profile || record?.derived_profile;
+    if (!record || !profile) return;
+    const result = { online: true, items: [], pending: true, profile };
+    state.result = result;
+    renderResult(result);
     showScreen("result");
+    const previous = record.recommendation_snapshot;
+    await completeOnlineResult(result, record);
+    if (record !== state.record || result !== state.result) return;
+    if (previous?.top?.length) {
+      record.recommendation_snapshots = [...(record.recommendation_snapshots || []), previous].slice(-5);
+    }
+    if (!result.error || !previous?.top?.length) await persistProfileEdit(record);
+    else record.recommendation_snapshot = previous;
+    saveSession();
+    if (state.screen === "result") renderResult(result);
   }
 
   function renderTreeLibrary(container) {
@@ -3424,6 +2912,7 @@
     const title = document.createElement("div");
     title.innerHTML = "<h2>写评价</h2>";
     head.append(title);
+    if (!state.treeSelectedWork) head.append(textButton("写散贴", () => renderGeneralEditor(container)));
     container.append(head);
 
     const search = document.createElement("form");
@@ -3455,18 +2944,17 @@
       const list = document.createElement("div");
       list.className = "tree-search-results";
       list.textContent = "搜索中…";
-      const manual = document.createElement("button");
-      manual.type = "button";
-      manual.className = "text-button";
-      manual.textContent = "使用原题名";
-      manual.addEventListener("click", () => openReviewEditor(manualRef(keyword), container));
-      box.append(heading, list, manual);
+      box.append(heading, list);
       container.append(box);
-      findWorks(keyword).then(({ items, fallback, series, grouped }) => {
+      const paint = (data) => {
         if (!list.isConnected) return;
         list.replaceChildren();
-        if (!items.length && !series) list.textContent = fallback ? "外部搜索暂不可用，可使用原题名。" : "未找到条目。";
-        renderWorkChoices(list, items, (ref) => openReviewEditor(ref, container), { series, grouped });
+        if (!data.items.length) list.textContent = data.fallback ? "作品索引暂时繁忙，请稍后重试。" : "未找到条目。";
+        renderWorkChoices(list, data.items, (ref) => openReviewEditor(ref, container), data);
+      };
+      findWorks(keyword).then((data) => {
+        paint(data);
+        return expandWorkResults(data).then((group) => { if (group !== data) paint(group); });
       });
     }
 
@@ -3479,9 +2967,9 @@
   function openReviewEditor(workRef, container, existing = null, draft = null) {
     const previous = existing || state.ratings.find((rating) => sameWork(workRef, rating.external_ref));
     state.treeSelectedWork = { ref: previous?.external_ref || workRef, existingId: previous?.id || null, draftId: uid(), draft };
-    state.treeSearch = "";
     renderTreeLibrary(container);
-    $(".review-editor select", container)?.focus();
+    $(".review-editor select", container)?.focus({ preventScroll: true });
+    $(".review-editor", container)?.scrollIntoView({ block: "nearest" });
   }
 
   function renderReviewEditor(container) {
@@ -3513,7 +3001,7 @@
     const note = document.createElement("p");
     note.className = "tree-copy";
     note.textContent = existing?.publication?.moderated ? "这条发言已被管理员隐藏。"
-      : "评价会匿名公开。可在「我的评价」编辑或删除。";
+      : "评价会匿名公开到该作品的系列讨论区。";
     form.append(note);
 
     const actions = document.createElement("div");
@@ -3574,7 +3062,10 @@
       state.treeSelectedWork = null;
       showToast(existing ? "评价已更新。" : "评价已匿名发布。");
       if (selected.returnToHistory) openTree("history");
-      else if (state.screen === "tree" && state.treeTab === "library") renderTreeLibrary(container);
+      else if (state.screen === "tree" && state.treeTab === "library") {
+        if (state.treeParent === "watchlist" || ["wanted", "watched", "work", "board"].includes(state.treeParent)) closeTree();
+        else renderTreeLibrary(container);
+      }
     });
 
     card.append(form);
@@ -3586,8 +3077,14 @@
     item.className = "tree-card public-review";
     const meta = document.createElement("p");
     meta.className = "post-meta";
-    meta.textContent = `${post.type === "favorite" ? "测评本命番" : "番剧评价"} · ${formatDate(post.published_at)}`;
+    meta.textContent = `${{ favorite: "测评本命番", review: "番剧评价", general: "散贴" }[post.type]} · ${formatDate(post.published_at)}`;
     item.append(meta);
+    if (post.type === "general") {
+      const body = document.createElement("p");
+      body.className = "feedback-message";
+      body.textContent = detail ? post.body : post.body.slice(0, 240);
+      item.append(titleElement(post.title), body);
+    }
     const highlight = post.highlight || post.works.map((work) => work.review?.comment || work.comment).find(Boolean);
     if (!detail && !admin && highlight) {
       const background = document.createElement("span");
@@ -3602,6 +3099,12 @@
       const title = document.createElement("h3");
       title.append(workLink(work.external_ref));
       block.append(title);
+      if (work.watched) {
+        const watched = document.createElement("span");
+        watched.className = "watched-badge";
+        watched.textContent = "作者已追";
+        block.append(watched);
+      }
       const label = work.strength ? LIKE_STRENGTHS.find(({ code }) => code === work.strength)?.label
         : { like: "喜欢", dislike: "不喜欢", neutral: "一般" }[work.sentiment];
       const description = document.createElement("p");
@@ -3666,25 +3169,33 @@
     return button;
   }
 
-  function renderPagedPosts(container, { admin = false, view = "posts" } = {}) {
+  function renderPagedPosts(container, { admin = false, view = "posts", board, boardTitle } = {}) {
     const form = document.createElement("form");
     form.className = "tree-search feed-controls";
     const input = document.createElement("input");
     input.type = "search";
     input.maxLength = 120;
-    input.placeholder = view === "users" ? "搜索昵称、用户名或 ID" : "按作品名搜索";
+    input.placeholder = view === "users" ? "搜索昵称、用户名或 ID" : "按番名或帖子标题搜索";
     input.setAttribute("aria-label", input.placeholder);
     const search = document.createElement("button");
     search.type = "submit";
     search.className = "outline-button";
     search.textContent = "搜索";
     const filter = labeledSelect("类型", [
-      { code: "", label: "全部发言" }, { code: "favorite", label: "测评本命番" }, { code: "review", label: "番剧评价" }
+      { code: "", label: "全部发言" }, { code: "general", label: "散贴" },
+      { code: "favorite", label: "测评本命番" }, { code: "review", label: "番剧评价" }
     ], "");
     filter.select.setAttribute("aria-label", "发言类型");
     form.append(input, search);
-    if (view === "posts") form.prepend(filter.select);
-    if (!admin) form.append(textButton("写评价", () => openTree("library"), "primary-button"));
+    if (view === "posts" && !board) form.prepend(filter.select);
+    if (!admin) form.append(textButton("写评价", () => {
+      state.treeSelectedWork = null;
+      openTree("library");
+      if (board && state.currentBoard?.title) {
+        state.treeSearch = state.currentBoard.title;
+        renderTreeLibrary(dom.treeContent);
+      }
+    }, "primary-button"));
 
     const list = document.createElement("div");
     list.className = "post-list";
@@ -3703,9 +3214,14 @@
       more.disabled = true;
       try {
         const params = new URLSearchParams({ q: query, type: filter.select.value, view });
+        if (board) params.set("board", board);
         if (append && next) params.set(view === "users" ? "after" : "before", next);
         const data = await apiJson(`/api/${admin ? "admin" : "reviews"}?${params}`);
         if (!list.isConnected || generation !== request) return;
+        if (boardTitle && data.board?.title) {
+          boardTitle.textContent = data.board.title;
+          state.currentBoard.title = data.board.title;
+        }
         if (!append) list.replaceChildren();
         if (view === "results") {
           for (const row of data.results) list.append(adminResultCard(row));
@@ -3771,7 +3287,84 @@
   }
 
   function renderPublicReviews(container) {
+    const find = document.createElement("form");
+    find.className = "tree-search board-search";
+    const input = document.createElement("input");
+    input.type = "search";
+    input.maxLength = 120;
+    input.setAttribute("aria-label", "搜索番剧讨论区");
+    input.placeholder = "按番名或别称找系列讨论区";
+    const button = document.createElement("button");
+    button.className = "outline-button";
+    button.textContent = "找讨论区";
+    const list = document.createElement("div");
+    list.className = "tree-search-results";
+    find.append(input, button);
+    find.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (!input.value.trim()) return;
+      list.textContent = "正在搜索讨论区…";
+      button.disabled = true;
+      const data = await findWorks(input.value.trim());
+      if (!list.isConnected) return;
+      list.replaceChildren();
+      if (!data.items.length) list.textContent = data.fallback ? "作品索引暂时繁忙。" : "没有找到对应的系列。";
+      else renderWorkChoices(list, data.items, openBoard, data);
+      button.disabled = false;
+    });
+    container.append(find, list);
     renderPagedPosts(container);
+  }
+
+  function renderBoard(container) {
+    const board = state.currentBoard;
+    const heading = document.createElement("h2");
+    heading.textContent = board.title || "系列讨论";
+    container.append(heading);
+    renderPagedPosts(container, { board: board.id, boardTitle: heading });
+  }
+
+  function renderGeneralEditor(container, existing = state.generalDraft) {
+    container.replaceChildren(titleElement(existing?.recordId ? "编辑散贴" : "写散贴"));
+    const form = document.createElement("form");
+    form.className = "tree-card tree-form";
+    const input = document.createElement("input");
+    input.placeholder = "标题";
+    input.setAttribute("aria-label", "散贴标题");
+    input.maxLength = 80;
+    input.required = true;
+    input.value = existing?.title || "";
+    const body = document.createElement("textarea");
+    body.placeholder = "正文";
+    body.setAttribute("aria-label", "散贴正文");
+    body.maxLength = 1600;
+    body.rows = 5;
+    body.required = true;
+    body.value = existing?.body || "";
+    const action = document.createElement("button");
+    action.className = "primary-button";
+    action.textContent = existing?.recordId ? "保存修改" : "匿名发布";
+    form.append(input, body, action, textButton("取消", () => {
+      state.generalDraft = null;
+      if (existing?.recordId) openTree("history");
+      else renderTreeLibrary(container);
+    }, "text-button"));
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (!state.account) {
+        state.generalDraft = { title: input.value, body: body.value };
+        openAccount({ message: "登录后可以匿名发帖。" });
+        return;
+      }
+      action.disabled = true;
+      try {
+        await apiJson("/api/forum", { account: true, account_username: state.account.username,
+          action: existing?.recordId ? "edit" : "create", id: existing?.recordId, title: input.value, body: body.value });
+        state.generalDraft = null;
+        openTree(existing?.recordId ? "history" : "reviews");
+      } catch (error) { showToast(error.message); action.disabled = false; }
+    });
+    container.append(form);
   }
 
   function labeledSelect(labelText, options, value) {
@@ -3847,7 +3440,7 @@
       const label = document.createElement("label");
       const check = document.createElement("input");
       check.type = "checkbox";
-      check.setAttribute("aria-label", `选择发言：${post.works.map(({ external_ref }) => external_ref.title_display).join("、")}`);
+      check.setAttribute("aria-label", `选择发言：${post.title || post.works.map(({ external_ref }) => external_ref.title_display).join("、")}`);
       check.addEventListener("change", updateSelection);
       checks.set(post, check);
       label.append(check, "选择");
@@ -3862,6 +3455,10 @@
           openReviewEditor(record.external_ref, dom.treeContent, record);
           state.treeSelectedWork.returnToHistory = true;
         }
+      }, "text-button"));
+      if (post.type === "general") buttons.append(textButton("编辑", () => {
+        openTree("library");
+        renderGeneralEditor(dom.treeContent, post);
       }, "text-button"));
       buttons.append(textButton("撤回发言", () => withdraw([post]), "text-button danger-text"));
       card.append(buttons);
@@ -4067,7 +3664,7 @@
       ["社区加推", "推荐会优先从相似用户共同选择的本命番中挑一部。样本不足时使用树洞好评。有合适的作品时才显示，推荐结果会保留作品链接。"],
       ["追番与分享", "待追与已追清单按账号保存。已追作品的重刷次数、喜爱程度与评价会帮助找番。分享页只显示你勾选的内容，访客无需登录。"],
       ["站外讨论", "按作品与年份匹配 Kitsu 评论，并展示提炼的标签、互动数和原文链接。Bangumi 提供作品和讨论入口。"],
-      ["作品索引", "作品搜索来自 Bangumi。核心推荐使用 AniList 和 MyAnimeList 的 150 部精选作品，封面来自 AniList。搜索结果按需查询，保存档案或评价时只保留相关作品的引用。"],
+      ["作品索引", "测评推荐和找番共用 Bangumi 检索，优先使用 2012 年及以后首播的作品。搜番支持别称、角色、剧情关键词和外部反向搜图。"],
       ["账号与树洞发言", "登录后发布的评价会匿名公开。一次测评会把第 40 题的本命番和喜欢理由发布为一条发言。十项标准维度和推荐结果保存在账号档案，可在个人中心编辑或撤下树洞发言。"],
       ["数据使用", "新测评的标准维度用于相似口味匹配。管理员可查看测评结果、处理公开发言并导出汇总。个人设置可导入旧测评档案，旧记录保留原有可见范围。"]
     ];
@@ -4161,8 +3758,23 @@
       renderResumeCard(state.savedSession);
     }
     applyPersonalAppearance();
+    $("#account-open").hidden = Boolean(state.account);
     $("#admin-tab").hidden = state.account?.role !== "admin";
-    if (state.screen === "tree") renderTree();
+    if (state.screen === "tree" && ["profile", "history", "settings", "admin"].includes(state.treeTab)) renderTree();
+  }
+
+  function loadAccountArchive(user) {
+    state.accountLoading = true;
+    return apiJson("/api/account", undefined, 9500).then((data) => {
+      if (state.account?.id !== user.id || data.user?.id !== user.id) return;
+      state.accountLoading = false;
+      applyAccountData(data);
+    }).catch(() => {
+      if (state.account?.id !== user.id) return;
+      state.accountLoading = false;
+      showToast("账号已登录，暂时无法读取档案。");
+      if (state.screen === "tree" && state.treeTab === "profile") renderTree();
+    });
   }
 
   function setAccountMode(mode) {
@@ -4202,13 +3814,17 @@
     status.textContent = "处理中…";
     try {
       await apiJson("/api/account", { action, ...fields });
-      const data = action === "logout" ? { user: null } : await apiJson("/api/account");
+      const needsArchive = state.pendingGuestRecord || state.guestResult?.record?.evaluation_version === "shared-1";
+      const data = action === "logout" ? { user: null }
+        : await apiJson(needsArchive ? "/api/account" : "/api/account?view=session");
+      state.accountLoading = Boolean(data.user && !needsArchive);
       const fromResult = state.screen === "result" && Boolean(state.pendingGuestRecord);
       const guestRun = data.user && (fromResult ? buildSessionSnapshot() : state.guestResult);
       const pending = guestRun?.record?.evaluation_version === "shared-1" && guestRun.record;
       const inProgress = data.user && ["test", "favorites"].includes(state.screen) ? buildSessionSnapshot() : null;
       const resumeThread = data.user && state.treeTab === "thread" && state.screen === "tree" ? state.currentPost : null;
       const resumeReview = data.user && state.screen === "tree" ? state.treeSelectedWork : null;
+      const resumeGeneral = data.user && state.screen === "tree" && state.treeTab === "library" ? state.generalDraft : null;
       applyAccountData(data);
       let bindError;
       if (pending) {
@@ -4247,8 +3863,12 @@
       } else if (resumeReview) {
         openTree("library");
         openReviewEditor(resumeReview.ref, dom.treeContent, null, resumeReview.draft);
+      } else if (resumeGeneral) {
+        openTree("library");
+        renderGeneralEditor(dom.treeContent, resumeGeneral);
       } else if (data.user && (!pending || !fromResult)) openTree("profile");
       else if (!data.user) handleGoHome();
+      if (state.accountLoading && data.user) loadAccountArchive(data.user);
       showToast(bindError || (action === "logout" ? "已退出登录。" : pending ? "已登录，测评已绑定。" : "已登录。"));
     } catch (error) {
       status.textContent = error.message;
@@ -4303,6 +3923,7 @@
   /* ------------------------------------------------------------------ */
 
   function bindEvents() {
+    $("#account-open").addEventListener("click", () => openAccount());
     dom.startButton.addEventListener("click", startNewQuestionnaire);
     $("#next-exploration").addEventListener("click", async (event) => {
       const button = event.currentTarget;
@@ -4310,10 +3931,30 @@
       try { await recalculateRecommendations({ nextExplore: true }); }
       finally { button.disabled = false; }
     });
-    $$("[data-area]").forEach((button) => button.addEventListener("click", () => openTree(button.dataset.area)));
+    $$("[data-area]").forEach((button) => button.addEventListener("click", () => {
+      if (button.dataset.area === "reviews") state.currentBoard = null;
+      openTree(button.dataset.area);
+    }));
     $$("[data-go-home]").forEach((button) => button.addEventListener("click", handleGoHome));
     $("#result-home").addEventListener("click", handleGoHome);
     $("#help-open").addEventListener("click", () => openTree("data"));
+    $("#feedback-open").addEventListener("click", () => $("#feedback-modal").showModal());
+    $("#feedback-form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      const button = form.querySelector("button");
+      const status = $("#feedback-status");
+      button.disabled = true;
+      status.textContent = "正在提交…";
+      try {
+        await apiJson("/api/site-feedback", Object.fromEntries(new FormData(form)));
+        form.reset();
+        status.textContent = "";
+        $("#feedback-modal").close();
+        showToast("反馈已提交。");
+      } catch (error) { status.textContent = error.message; }
+      finally { button.disabled = false; }
+    });
     dom.resumeButton.addEventListener("click", () => {
       if (state.savedSession) restoreSession(state.savedSession, { auto: true });
     });
@@ -4362,7 +4003,8 @@
       return;
     }
     experience = createWatchExperience({ state, apiJson, openAccount, showToast, findWorks, renderWorkChoices,
-      workLink, textButton, openTree, sameWork, postCard });
+      expandWorkResults, workLink, externalWorkLink, openWork, reviewWork, openBoard,
+      textButton, openTree, sameWork, postCard });
     loadLocalData();
     state.savedSession = loadSavedSession();
     state.guestResult = loadLocalJson(GUEST_RESULT_KEY, null) || (state.savedSession?.result ? state.savedSession : null);
@@ -4372,27 +4014,39 @@
     const landing = new URLSearchParams(location.search);
     const shareToken = landing.get("share");
     const sharedPost = landing.get("post");
-    dom.startButton.disabled = true;
+    const targetWork = landing.get("work");
+    const title = landing.get("workTitle");
+    const board = landing.get("board");
     try {
-      await detectServer();
-      if (state.accountsAvailable) {
-        const data = await apiJson("/api/account", undefined, 4500);
+      if (/^https?:$/.test(location.protocol)) {
+        const data = await apiJson("/api/account?view=session", undefined, 4800);
+        state.apiOnline = state.accountsAvailable = state.externalSearchAvailable = true;
         if (data.user) {
+          state.accountLoading = true;
           applyAccountData(data);
+          loadAccountArchive(data.user);
           state.sessionReady = true;
           if (shareToken) { state.shareToken = shareToken; openTree("shared"); }
           else if (sharedPost) { state.currentPost = sharedPost; openTree("thread"); }
+          else if (board && /^\d{1,12}$/.test(board)) openBoard({ provider_id: board });
+          else if (targetWork && /^\d{1,12}$/.test(targetWork)) openWork({ provider: "bangumi", provider_id: targetWork });
+          else if (title) openWork({ ...manualRef(title), year: landing.get("year") });
           else openTree("profile");
           return;
         }
       }
     } catch {
-      showToast("暂时无法读取账号档案。");
+      detectServer();
     } finally {
+      $("#account-open").hidden = Boolean(state.account);
+      dom.startButton.textContent = "开始测试";
       dom.startButton.disabled = false;
     }
     if (shareToken) { state.shareToken = shareToken; openTree("shared"); return; }
     if (sharedPost) { state.currentPost = sharedPost; openTree("thread"); return; }
+    if (board && /^\d{1,12}$/.test(board)) { openBoard({ provider_id: board }); return; }
+    if (targetWork && /^\d{1,12}$/.test(targetWork)) { openWork({ provider: "bangumi", provider_id: targetWork }); return; }
+    if (title) { openWork({ ...manualRef(title), year: landing.get("year") }); return; }
     if (state.screen !== "intro") return;
     if (state.guestDashboard) {
       state.sessionReady = true;

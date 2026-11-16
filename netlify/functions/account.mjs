@@ -13,6 +13,7 @@ export default async function handler(req) {
     if (req.method === "GET") {
       const user = await getUser(req);
       if (!user) return jsonResponse({ ok: true, user: null });
+      if (new URL(req.url).searchParams.get("view") === "session") return jsonResponse({ ok: true, user });
       const [questionnaires, ratings, reactions, settings] = await Promise.all([
         readAllRecords(user.id), readAllRatings(user.id), readAllReactions(user.id), memberSettings(user)
       ]);

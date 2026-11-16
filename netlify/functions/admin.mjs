@@ -4,7 +4,7 @@ import { listMembers, setSanction } from "../shared/members.mjs";
 import { getUser, keyPart, readJson, RequestError, usernamePattern } from "../shared/auth.mjs";
 import { cursorPattern, pagePosts, readPostRecords } from "../shared/posts.mjs";
 import { changeEntry, packQuestionnaire, packRating, publicationFor } from "../shared/records.mjs";
-import { errorResponse, getRecord, getResponsesStore, jsonResponse, ratingKey, readAllRecords, responseKey } from "../shared/store.mjs";
+import { errorResponse, forumKey, getRecord, getResponsesStore, jsonResponse, ratingKey, readAllRecords, responseKey } from "../shared/store.mjs";
 
 export const config = {
   path: "/api/admin",
@@ -50,12 +50,12 @@ export default async function handler(req) {
       }
       const deleting = action === "delete";
       if (!isOwner(owner) || typeof id !== "string" || !keyPart.test(id) ||
-        !["favorite", "review"].includes(type) || (!deleting && typeof moderated !== "boolean")) {
+        !["favorite", "review", "general"].includes(type) || (!deleting && typeof moderated !== "boolean")) {
         return errorResponse(400, "发言操作无效");
       }
       const favorite = type === "favorite";
-      const key = favorite ? responseKey(id, owner) : ratingKey(id, owner);
-      const pack = favorite ? packQuestionnaire : packRating;
+      const key = favorite ? responseKey(id, owner) : type === "general" ? forumKey(id, owner) : ratingKey(id, owner);
+      const pack = favorite ? packQuestionnaire : type === "general" ? (record) => record : packRating;
       const store = getResponsesStore();
       if (deleting && !favorite) {
         const record = await store.get(key, { type: "json" });
@@ -96,7 +96,7 @@ export default async function handler(req) {
       return jsonResponse({ ok: true, users: users.slice(0, 20), next: users.length > 20 ? users[19].username : null });
     }
     if (params.get("view") === "posts") {
-      const type = ["review", "favorite"].includes(params.get("type")) ? params.get("type") : "";
+      const type = ["review", "favorite", "general"].includes(params.get("type")) ? params.get("type") : "";
       const page = pagePosts(await readPostRecords(type), { query, cursor, type, admin: true });
       const members = new Map((await listMembers()).map((member) => [member.id, member]));
       return jsonResponse({ ok: true, ...page, posts: page.posts.map((post) => ({
