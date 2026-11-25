@@ -1,0 +1,318 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f4f6f5">
+  <meta name="description" content="40 道番剧审美问卷：记录你具体为什么喜欢作品，并给出可追溯、可纠正的推荐。">
+  <title>本命番推荐所</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%231f7a4d'/%3E%3Ctext x='32' y='43' text-anchor='middle' font-size='34' fill='%23ffffff' font-family='sans-serif'%3E本%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <button class="mobile-menu-button" id="mobile-menu-button" type="button" aria-label="打开菜单" aria-expanded="false" aria-controls="mobile-drawer">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+    </button>
+    <button class="brand" type="button" data-go-home aria-label="回到首页">
+      <span class="brand-seal" aria-hidden="true">本</span>
+      <span class="brand-type">
+        <strong>本命番推荐所</strong>
+        <small>ANIME SOUL LAB</small>
+      </span>
+    </button>
+    <div class="header-account">
+      <div class="account-menu-wrap" id="account-menu-wrap">
+        <button class="quiet-button account-trigger" id="account-open" type="button" hidden aria-expanded="false" aria-controls="account-menu">
+          登录
+        </button>
+        <div class="account-menu" id="account-menu" hidden>
+          <div class="account-menu-head">
+            <strong id="account-menu-name">我的账号</strong>
+            <button class="account-menu-close" id="account-menu-close" type="button" aria-label="关闭账号菜单">×</button>
+          </div>
+          <button type="button" data-account-menu="history">我的发帖</button>
+          <button type="button" data-account-menu="settings">个人设置</button>
+          <button type="button" data-account-menu="theme">主题设置</button>
+          <button type="button" data-account-menu="logout" class="is-danger">退出登录</button>
+          <div class="account-menu-admin" id="account-menu-admin" hidden>
+            <span>管理</span>
+            <button type="button" data-account-menu="admin" data-admin-view="dashboard">图表总览</button>
+            <button type="button" data-account-menu="admin" data-admin-view="results">问卷汇总</button>
+            <button type="button" data-account-menu="admin" data-admin-view="observations">用户帖子</button>
+            <button type="button" data-account-menu="admin" data-admin-view="users">用户管理</button>
+            <button type="button" data-account-menu="admin" data-admin-view="tags">标签审核</button>
+            <button type="button" data-account-menu="admin" data-admin-view="feedback">站点反馈</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+  <div class="account-menu-backdrop" id="account-menu-backdrop" hidden></div>
+
+  <nav class="site-rail" id="site-rail" aria-label="站点导航" hidden>
+    <button class="rail-link" type="button" data-area="profile" aria-label="个人概览">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.2"/><path d="M5 20c.6-4 3-6 7-6s6.4 2 7 6"/></svg><span>个人概览</span>
+    </button>
+    <button class="rail-link" type="button" data-area="search" aria-label="搜番剧">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 4 4m-11-12 4 3-4 3z"/></svg><span>搜番剧</span>
+    </button>
+    <button class="rail-link rail-compose" id="post-open" type="button" aria-label="分享作品观察">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="18" cy="5" r="2.4"/><circle cx="6" cy="12" r="2.4"/><circle cx="18" cy="19" r="2.4"/><path d="m8.1 10.8 7.8-4.5M8.1 13.2l7.8 4.5"/></svg>
+    </button>
+    <button class="rail-link" type="button" data-area="discover" aria-label="想追番了">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3c1.2 5.2 3.8 7.8 9 9-5.2 1.2-7.8 3.8-9 9-1.2-5.2-3.8-7.8-9-9 5.2-1.2 7.8-3.8 9-9z"/></svg><span>想追番了</span>
+    </button>
+    <button class="rail-link" type="button" data-area="wanted" aria-label="追番列表">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="4" width="15" height="16" rx="2"/><path d="m8 9 1 1 2-2m-3 7 1 1 2-2m3-5h3m-3 6h3"/></svg><span>追番列表</span>
+    </button>
+  </nav>
+  <div class="mobile-drawer-backdrop" id="mobile-drawer-backdrop" hidden></div>
+  <aside class="mobile-drawer" id="mobile-drawer" aria-label="菜单" hidden>
+    <div class="mobile-drawer-head">
+      <strong>菜单</strong>
+      <button class="modal-close" id="mobile-drawer-close" type="button" aria-label="关闭菜单">×</button>
+    </div>
+    <nav class="mobile-drawer-nav" id="mobile-drawer-nav"></nav>
+  </aside>
+
+  <main class="site-main">
+    <!-- 开始页 -->
+    <section class="screen intro-screen is-active" id="screen-intro">
+      <div class="start-wrap" id="guest-start">
+        <h1>找到你的下一部本命番</h1>
+        <p class="start-lead">聊聊你真正喜欢的作品。</p>
+        <div class="start-actions">
+          <button class="start-button" id="start-btn" type="button" disabled>正在确认登录状态…</button>
+        </div>
+        <p class="start-meta">40 道题 · 约 8–12 分钟</p>
+        <div class="resume-card" id="resume-card" hidden>
+          <div>
+            <strong id="resume-title">上次的进度还在</strong>
+            <span id="resume-text"></span>
+          </div>
+          <button class="outline-button" id="resume-btn" type="button">继续</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- 40 题：q01–q39 -->
+    <section class="screen test-screen" id="screen-test" aria-labelledby="question-text">
+      <div class="test-shell">
+        <div class="test-topline">
+          <button class="test-exit" id="test-exit-btn" type="button"><span aria-hidden="true">←</span> 退出</button>
+          <span class="test-mode" id="question-group">本命番推荐所</span>
+          <span class="test-count" id="question-counter">01 <em>/ 40</em></span>
+        </div>
+        <div class="progress-track" role="progressbar" aria-valuemin="1" aria-valuemax="40" aria-valuenow="1" aria-label="答题进度">
+          <span class="progress-fill" id="progress-fill"></span>
+        </div>
+
+        <div class="question-panel">
+          <div class="question-meta">
+            <span id="question-kind">观看经验与当下状态</span>
+            <span class="question-meta-line" aria-hidden="true"></span>
+            <span class="question-number" id="question-number">q01</span>
+          </div>
+          <h2 class="question-text" id="question-text" tabindex="-1"></h2>
+          <p class="scale-instruction" id="scale-instruction"></p>
+          <div class="options-grid" id="options" role="group" aria-labelledby="question-text"></div>
+          <div class="test-bottomline">
+            <button class="prev-button" id="prev-btn" type="button"><span aria-hidden="true">←</span> 上一题</button>
+            <span class="keyboard-hint" id="keyboard-hint"></span>
+            <span class="test-progress-note" id="test-progress-note"></span>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- 第 40 题：真正喜欢的作品 -->
+    <section class="screen favorite-screen" id="screen-favorites" aria-labelledby="favorites-heading">
+      <div class="step-shell">
+        <div class="test-topline">
+          <button class="test-exit" id="favorites-back-btn" type="button"><span aria-hidden="true">←</span> 回到第 39 题</button>
+          <span class="test-mode">最后一题 · 第 40 题</span>
+          <span class="test-count">40 <em>/ 40</em></span>
+        </div>
+        <div class="progress-track" role="progressbar" aria-valuemin="1" aria-valuemax="40" aria-valuenow="40" aria-label="答题进度">
+          <span class="progress-fill is-complete"></span>
+        </div>
+
+        <div class="step-copy">
+          <h2 id="favorites-heading">你真正喜欢的作品</h2>
+          <p class="step-lead">填 1–5 部让你想重看、推荐或一直记得的作品。</p>
+        </div>
+
+        <form class="favorite-form" id="favorites-form" novalidate>
+          <details class="taste-preferences-details">
+            <summary>可选：补充角色与画风偏好</summary>
+            <div id="taste-preferences"></div>
+          </details>
+          <div id="favorite-entries" class="favorite-entries"></div>
+          <button class="outline-button add-favorite-button" id="add-favorite" type="button">＋ 再添加一部（最多 5 部）</button>
+
+          <div class="publish-note">
+            <strong id="favorite-publish-label">保存到账号档案</strong>
+            <p id="favorite-publish-note">这一步填写的作品和理由会保存到后台，仅管理员可查看。</p>
+          </div>
+
+          <button class="primary-button submit-button" id="submit-favorites" type="submit">发布并查看推荐</button>
+          <p class="form-error" id="favorites-error" role="alert" hidden></p>
+        </form>
+      </div>
+    </section>
+
+    <!-- 计算中 -->
+    <section class="screen loading-screen" id="screen-loading" aria-live="polite" aria-busy="true">
+      <div class="loading-pulse" aria-hidden="true"><span></span></div>
+      <h2 id="loading-title">正在整理你的 40 道回答</h2>
+    </section>
+
+    <!-- 结果页 -->
+    <section class="screen result-screen" id="screen-result">
+      <div class="result-wrap">
+        <div class="result-topline">
+          <div>
+            <h2 class="result-heading">给你的推荐</h2>
+          </div>
+          <button class="outline-button" id="result-home" type="button" hidden>我的主页</button>
+        </div>
+        <p class="result-save-state" id="result-save-state" hidden></p>
+
+        <article class="profile-card" id="profile-card">
+          <div class="profile-copy">
+            <p class="profile-kicker">你的审美画像</p>
+            <h2 id="profile-title">本次回答的轮廓</h2>
+            <p class="profile-description" id="profile-summary"></p>
+            <div class="trait-chips" id="profile-evidence"></div>
+            <p class="profile-footnote" id="profile-uncertainty"></p>
+          </div>
+        </article>
+
+        <section class="recommendation-section" aria-labelledby="recommendation-heading">
+          <div class="rec-heading"><h2 id="recommendation-heading">为你精选</h2></div>
+          <div class="recommendation-list" id="recommendations"></div>
+          <button class="outline-button" id="next-exploration" type="button" hidden>换一部探索推荐</button>
+        </section>
+
+        <details class="analysis-panel">
+          <summary>查看推荐依据与本次回答的更多细节 <span aria-hidden="true">＋</span></summary>
+          <div class="analysis-content" id="result-details"></div>
+        </details>
+
+      </div>
+    </section>
+
+    <!-- 站点页面 -->
+    <section class="screen tree-screen" id="screen-tree">
+      <div class="tree-wrap">
+        <aside class="personal-sidebar" id="personal-sidebar" aria-label="个人空间" hidden>
+          <div id="personal-identity"></div>
+          <nav class="personal-menu" aria-label="个人空间分区">
+            <button type="button" data-tree-tab="history" data-section="posts">我的发帖</button>
+            <button type="button" data-tree-tab="settings">个人设置</button>
+            <button type="button" data-tree-tab="theme">主题设置</button>
+            <button type="button" id="personal-logout" class="is-danger">退出登录</button>
+            <div class="personal-menu-group" id="admin-tab" role="group" aria-label="管理" hidden>
+              <p>管理</p>
+              <button type="button" data-tree-tab="admin" data-section="dashboard">图表总览</button>
+              <button type="button" data-tree-tab="admin" data-section="results">测评结果</button>
+              <button type="button" data-tree-tab="admin" data-section="observations">用户帖子</button>
+              <button type="button" data-tree-tab="admin" data-section="users">用户与处罚</button>
+              <button type="button" data-tree-tab="admin" data-section="feedback">站点反馈</button>
+              <button type="button" data-tree-tab="admin" data-section="tags">标签审核</button>
+            </div>
+          </nav>
+        </aside>
+        <div class="tree-main">
+          <button class="test-exit tree-rail-back" id="tree-back-btn" type="button" hidden><span aria-hidden="true">←</span> 返回</button>
+          <div class="workspace-heading" id="watchlist-header" hidden>
+            <h1 class="workspace-title">追番列表</h1>
+            <nav class="tree-tabs" id="watchlist-tabs" aria-label="追番分区">
+              <button type="button" data-tree-tab="wanted">待追</button>
+              <button type="button" data-tree-tab="watched">已追</button>
+            </nav>
+          </div>
+          <div id="tree-content" class="tree-content"></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="footer-links">
+      <button type="button" id="help-open">数据与推荐说明</button>
+      <button type="button" id="feedback-open">反馈</button>
+    </div>
+  </footer>
+
+  <dialog class="modal-card composer-dialog" id="composer-modal" aria-labelledby="composer-title">
+    <div class="modal-head">
+      <h2 id="composer-title"></h2>
+      <form method="dialog"><button class="modal-close" type="submit" aria-label="关闭发布窗口">×</button></form>
+    </div>
+    <div id="composer-content"></div>
+  </dialog>
+
+  <dialog class="modal-card account-dialog" id="account-modal" aria-labelledby="account-title">
+    <div class="modal-head">
+      <h2 id="account-title">我的账号</h2>
+      <button class="modal-close" type="button" id="account-close" aria-label="关闭">×</button>
+    </div>
+    <div id="account-guest">
+      <p id="account-message" class="tree-copy" hidden></p>
+      <div class="account-modes" role="group" aria-label="账号操作">
+        <button class="outline-button" type="button" data-account-mode="login" aria-pressed="true">登录</button>
+        <button class="outline-button" type="button" data-account-mode="register" aria-pressed="false">注册</button>
+      </div>
+      <form id="account-form" class="tree-form">
+        <label for="account-username">用户名</label>
+        <input id="account-username" name="username" autocomplete="username" required minlength="3" maxlength="32" pattern="[A-Za-z0-9_]{3,32}" autocapitalize="none" spellcheck="false">
+        <label for="account-password">密码</label>
+        <div class="password-field">
+          <input id="account-password" name="password" type="password" autocomplete="current-password" required>
+          <button type="button" id="account-show-password" aria-controls="account-password" aria-pressed="false">显示</button>
+        </div>
+        <div class="account-confirm" id="account-confirm" hidden>
+          <label for="account-repeat">再次输入密码</label>
+          <input id="account-repeat" type="password" autocomplete="new-password">
+          <p class="tree-copy">用户名使用 3–32 位英文字母、数字或下划线，密码至少 10 个字符。</p>
+        </div>
+        <button class="primary-button" type="submit" id="account-submit">登录</button>
+      </form>
+    </div>
+    <p id="account-status" class="tree-copy" role="status"></p>
+  </dialog>
+
+  <dialog class="modal-card" id="feedback-modal" aria-labelledby="feedback-title">
+    <div class="modal-head">
+      <h2 id="feedback-title">反馈</h2>
+      <form method="dialog"><button class="modal-close" type="submit" aria-label="关闭">×</button></form>
+    </div>
+    <form id="feedback-form" class="tree-form">
+      <label for="feedback-kind">反馈类型</label>
+      <select id="feedback-kind" name="kind">
+        <option value="bug">功能问题</option><option value="data">番剧资料</option><option value="idea">功能建议</option><option value="other">其他</option>
+      </select>
+      <label for="feedback-message">反馈内容</label>
+      <textarea id="feedback-message" name="message" rows="5" maxlength="1600" required></textarea>
+      <button class="primary-button" type="submit">提交反馈</button>
+      <p id="feedback-status" class="tree-copy" role="status"></p>
+    </form>
+  </dialog>
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+  <script src="test-data.js" defer></script>
+  <script src="catalog.js" defer></script>
+  <script src="media-assets.js" defer></script>
+  <script src="taste-analysis.js" defer></script>
+  <script src="features.js" defer></script>
+  <script src="series-data.js" defer></script>
+  <script src="watch-model.js" defer></script>
+  <script src="photo-search.js" defer></script>
+  <script src="experience.js" defer></script>
+  <script src="select-menu.js" defer></script>
+  <script src="app.js" defer></script>
+</body>
+</html>

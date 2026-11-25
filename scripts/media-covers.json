@@ -1,0 +1,602 @@
+{
+  "frieren": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx154587-qQTzQnEJJ3oB.jpg",
+    "coverColor": "#bbf1a1"
+  },
+  "fmab": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx5114-nSWCgQlmOMtj.jpg",
+    "coverColor": "#e4c993"
+  },
+  "steins-gate": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx9253-tIUXF2gfU8Sg.jpg",
+    "coverColor": "#ffd6ae"
+  },
+  "hunter-x-hunter": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx11061-y5gsT1hoHuHw.png",
+    "coverColor": "#f1d65d"
+  },
+  "logh": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx820-x5dNLNFeKb8B.png",
+    "coverColor": "#bb8628"
+  },
+  "monster": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx19-gtMC64182sm4.jpg",
+    "coverColor": "#ad9685"
+  },
+  "koe-no-katachi": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx20954-sYRfE5jQRtSB.jpg",
+    "coverColor": "#5dbbe4"
+  },
+  "apothecary": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx161645-QLbzHXiYRgV2.jpg",
+    "coverColor": "#f1865d"
+  },
+  "vinland-saga": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx101348-2fhDFPCuMNiz.jpg",
+    "coverColor": "#f16b5d"
+  },
+  "bocchi": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx130003-HTDmeL4RGeJ4.png",
+    "coverColor": "#e4bb50"
+  },
+  "first-slam-dunk": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx128207-SWpfVJMRfQ9X.jpg",
+    "coverColor": "#ad9685"
+  },
+  "spirited-away": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx199-sWefXJvXkDOb.jpg",
+    "coverColor": "#e45d5d"
+  },
+  "cowboy-bebop": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx1-GCsPm7waJ4kS.png",
+    "coverColor": "#f16b50"
+  },
+  "gintama": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx918-iOaeBVUn4uK7.jpg",
+    "coverColor": "#f1865d"
+  },
+  "mushishi": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx457-l6cTtNgI9Bi6.png",
+    "coverColor": "#d6bb78"
+  },
+  "code-geass": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx1575-hsmWM2ydNm1m.jpg",
+    "coverColor": "#c9d678"
+  },
+  "howl": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx431-o8Lj3XkjHm2k.jpg",
+    "coverColor": "#0daee4"
+  },
+  "kenshin-trust": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx44-MG5I672UbWAy.png",
+    "coverColor": "#ffd6bb"
+  },
+  "look-back": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx174788-9LsUnn0oEppv.jpg",
+    "coverColor": "#e4bb50"
+  },
+  "your-name": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx21519-SUo3ZQuCbYhJ.png",
+    "coverColor": "#0da1e4"
+  },
+  "ping-pong": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx20607-fIOxVISIl0HY.jpg",
+    "coverColor": "#e47843"
+  },
+  "gurren-lagann": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx2001-XwRnjzGeFWRQ.png",
+    "coverColor": "#f15d35"
+  },
+  "mononoke": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx164-ySuGzCWVw2cL.jpg",
+    "coverColor": "#ad9685"
+  },
+  "violet-evergarden": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx21827-ubzq619ZA2E9.png",
+    "coverColor": "#3586e4"
+  },
+  "berserk-1997": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx33-PSwfE5B0gejI.jpg",
+    "coverColor": "#e49350"
+  },
+  "attack-on-titan": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx16498-buvcRTBx4NSm.jpg",
+    "coverColor": "#f1a143"
+  },
+  "made-in-abyss": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx97986-TQ7dCgbS3y5s.jpg",
+    "coverColor": "#e4c9ae"
+  },
+  "dungeon-meshi": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx153518-IVXPDY5ph3kO.jpg",
+    "coverColor": "#e48650"
+  },
+  "odd-taxi": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx128547-nNekWTKqmvEi.jpg",
+    "coverColor": "#f1bb00"
+  },
+  "cyberpunk-edgerunners": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx120377-ayZPoxiWt4Li.jpg",
+    "coverColor": "#78f150"
+  },
+  "death-note": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx1535-kUgkcrfOrkUM.jpg",
+    "coverColor": "#ad9685"
+  },
+  "your-lie-in-april": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx20665-TLgkL8T8IRFd.png",
+    "coverColor": "#e4bb50"
+  },
+  "perfect-blue": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx437-69NMlXKFeuse.jpg",
+    "coverColor": "#1a356b"
+  },
+  "nana": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx877-6BUYEWp8By8j.png",
+    "coverColor": "#f14386"
+  },
+  "a-place-further": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx99426-ti5BL69Ip3kZ.png",
+    "coverColor": "#f1ae28"
+  },
+  "slam-dunk": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx170-cmD8A0vZsp6g.jpg",
+    "coverColor": "#ae4328"
+  },
+  "ranking-of-kings": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx113717-9sNnN8WRgK15.jpg",
+    "coverColor": "#e4935d"
+  },
+  "samurai-champloo": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx205-7tHVFu6dPBm9.png",
+    "coverColor": "#ad9685"
+  },
+  "wolf-children": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx12355-wNsvhEsXEgrH.png",
+    "coverColor": "#e45d6b"
+  },
+  "mob-psycho": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx21507-6YUSbh2m0N1p.jpg",
+    "coverColor": "#d65d1a"
+  },
+  "nichijou": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx10165-tw8Cz7K9tfVJ.png",
+    "coverColor": "#e4bb93"
+  },
+  "tatami-galaxy": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx7785-aTjIhsYva8cJ.jpg",
+    "coverColor": "#2886a1"
+  },
+  "oshi-no-ko": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx150672-WqmmwZ4nMzAy.png",
+    "coverColor": "#ff35c9"
+  },
+  "grave-fireflies": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx578-vU6XcOlb1XFU.jpg",
+    "coverColor": "#e4bb5d"
+  },
+  "space-brothers": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx12431-vL6wmxLsTzzS.png",
+    "coverColor": "#ad9685"
+  },
+  "rakugo": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx20972-95dyLz6lkCZ8.jpg",
+    "coverColor": "#f1d6bb"
+  },
+  "jujutsu": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx113415-LHBAeoZDIsnF.jpg",
+    "coverColor": "#e45d5d"
+  },
+  "eighty-six": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx116589-KawXHB6sApFt.jpg",
+    "coverColor": "#bbd6f1"
+  },
+  "grand-blue": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx100922-uxEhaCsqMMp3.png",
+    "coverColor": "#5daee4"
+  },
+  "dandadan": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx171018-60q1B6GK2Ghb.jpg",
+    "coverColor": "#e47850"
+  },
+  "chainsaw-man": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx127230-DdP4vAdssLoz.png",
+    "coverColor": "#6b1a1a"
+  },
+  "rose-of-versailles": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx338-dyRsnLdTLZGM.png",
+    "coverColor": "#e4ae43"
+  },
+  "gits-sac": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx467-mBTtIoR13qs2.jpg",
+    "coverColor": "#5da1e4"
+  },
+  "demon-slayer": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx101922-WBsBl0ClmgYL.jpg",
+    "coverColor": "#f1c9ae"
+  },
+  "kaguya": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx101921-ufrjLzhSz7L1.jpg",
+    "coverColor": "#e45086"
+  },
+  "haikyuu": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx20464-ooZUyBe4ptp9.png",
+    "coverColor": "#e48635"
+  },
+  "saiki": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx21804-As6tDLAvEvNY.jpg",
+    "coverColor": "#f1bb1a"
+  },
+  "run-with-wind": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx101903-ncgPJbbA5Nou.jpg",
+    "coverColor": "#5078e4"
+  },
+  "march-comes-in": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx21366-0wrYK0kjKeFn.jpg",
+    "coverColor": "#e4865d"
+  },
+  "utena": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/b440-r4l3N5WGgUOZ.jpg",
+    "coverColor": "#f1ae5d"
+  },
+  "summertime-render": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx129201-HJBauga2be8I.png",
+    "coverColor": "#2886e4"
+  },
+  "evangelion": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx30-AI1zr74Dh4ye.jpg",
+    "coverColor": "#f17843"
+  },
+  "one-punch-man": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx21087-B5DHjqZ3kW4b.jpg",
+    "coverColor": "#e4ae5d"
+  },
+  "barakamon": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx20722-2KAeq72E95dr.png",
+    "coverColor": "#4386e4"
+  },
+  "promised-neverland": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx101759-8UR7r9MNVpz2.jpg",
+    "coverColor": "#e4ae50"
+  },
+  "girls-band-cry": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx164212-eKh15LQxkTEx.jpg",
+    "coverColor": "#fff143"
+  },
+  "vivy": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx128546-UIwyhuhjxmL0.jpg",
+    "coverColor": "#35a1bb"
+  },
+  "shirobako": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx20812-KvIP1yffJEPZ.jpg",
+    "coverColor": "#5da1e4"
+  },
+  "one-outs": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx5040-9ruuekq2LZKJ.png",
+    "coverColor": "#e4e45d"
+  },
+  "tokyo-godfathers": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx759-XSKBju6xutdR.jpg",
+    "coverColor": "#e49350"
+  },
+  "kaiji": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx3002-BExanPfxp888.jpg",
+    "coverColor": "#78430d"
+  },
+  "dororo": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx101347-TGaDwEYqLfm1.jpg",
+    "coverColor": "#d6bb6b"
+  },
+  "nausicaa": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx572-ZE3kHBA6U0X1.jpg",
+    "coverColor": "#e4785d"
+  },
+  "bakemonogatari": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx5081-9GocceQ5Z865.jpg",
+    "coverColor": "#4393e4"
+  },
+  "totoro": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx523-fErBvxOHP7IX.jpg",
+    "coverColor": "#f19335"
+  },
+  "kiki": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx512-UwP8X4BR8YoM.png",
+    "coverColor": "#50a1c9"
+  },
+  "kino-2003": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx486-xXUgNOEBuxGs.jpg",
+    "coverColor": "#f1bb50"
+  },
+  "millennium-actress": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx1033-d5p1pbd5qa4L.png",
+    "coverColor": "#e4d61a"
+  },
+  "girls-last-tour": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx99420-k5Tel6yRMwA8.png",
+    "coverColor": "#ad9685"
+  },
+  "fruits-basket": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx105334-AZwEdMu4KFtV.jpg",
+    "coverColor": "#e4d6a1"
+  },
+  "weathering": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx106286-5COcpd0J9VbL.png",
+    "coverColor": "#5dbbe4"
+  },
+  "psycho-pass": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx13601-i42VFuHpqEOJ.jpg",
+    "coverColor": "#288686"
+  },
+  "yuru-camp": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx98444-Vzysp1EsrzgD.jpg",
+    "coverColor": "#f1ae5d"
+  },
+  "baccano": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx2251-tTQoWxVy4472.jpg",
+    "coverColor": "#e4bb5d"
+  },
+  "in-this-corner": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx15227-1tG3lhprG0A9.jpg",
+    "coverColor": "#e4e428"
+  },
+  "erased": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx21234-XmqW39aQ9o7O.jpg",
+    "coverColor": "#f1a150"
+  },
+  "mygo": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx163571-Atkvuzh1A1Ip.png",
+    "coverColor": "#e4c9a1"
+  },
+  "re-zero": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx21355-wRVUrGxpvIQQ.jpg",
+    "coverColor": "#f150ae"
+  },
+  "kids-on-slope": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx12531-m8q2U1lA6V90.jpg",
+    "coverColor": "#f1931a"
+  },
+  "princess-tutu": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx721-9tJpM47RBPJm.jpg",
+    "coverColor": "#1a4378"
+  },
+  "whisper-heart": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/nx585-5uq7j2xNNVmN.jpg",
+    "coverColor": "#f15d35"
+  },
+  "night-is-short": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx97917-bHtHhWkIsdR5.jpg",
+    "coverColor": "#86431a"
+  },
+  "great-pretender": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx110349-59hhZ9CNHVdk.png",
+    "coverColor": "#e4bb43"
+  },
+  "gits-1995": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx43-Y6EjeEMM14dj.png",
+    "coverColor": "#ad9685"
+  },
+  "chihayafuru": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx10800-hofcUL0YEL7O.png",
+    "coverColor": "#bbe443"
+  },
+  "kaguya-hime": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/16664-Wakrc8rbBkor.jpg",
+    "coverColor": "#f1d6bb"
+  },
+  "shinsekai-yori": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx13125-2EDZb8ahshQc.png",
+    "coverColor": "#e4c9ae"
+  },
+  "spice-and-wolf": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx2966-AEULMyYA9WKb.png",
+    "coverColor": "#f1c95d"
+  },
+  "daily-lives-high-school-boys": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx11843-ui2jBcuQUqnl.jpg",
+    "coverColor": "#aee4ae"
+  },
+  "wind-rises": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx16662-HUI8irtoTdOJ.jpg",
+    "coverColor": "#1aaed6"
+  },
+  "bunny-girl-senpai": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx101291-wfEdgPqtfU0l.jpg",
+    "coverColor": "#0d43f1"
+  },
+  "ao-ashi": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx134732-OXKSrOhF9pCM.jpg",
+    "coverColor": "#e4c95d"
+  },
+  "heavenly-delusion": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx155783-YosKbsmZzuDE.jpg",
+    "coverColor": "#286bbb"
+  },
+  "castle-in-the-sky": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx513-yM7Dlt65N4Rl.jpg",
+    "coverColor": "#e4c95d"
+  },
+  "dangers-in-my-heart": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx153152-Xnwmx7wuoIWV.jpg",
+    "coverColor": "#d6a150"
+  },
+  "natsume": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx4081-xi08naD69tjr.jpg",
+    "coverColor": "#86e450"
+  },
+  "planetes": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx329-4xwXdazRA7Ph.png",
+    "coverColor": "#5086c9"
+  },
+  "skip-and-loafer": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx141911-o6Jwav7hRPPM.jpg",
+    "coverColor": "#e4d6a1"
+  },
+  "akira": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx47-4CR68arv452h.jpg",
+    "coverColor": "#e45d50"
+  },
+  "eizouken": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx109298-suwdIUbJEPJx.png",
+    "coverColor": "#e4a135"
+  },
+  "hibike-euphonium": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx20912-SiiG4HPrjQlX.jpg",
+    "coverColor": "#5dc9e4"
+  },
+  "yona": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx20770-brCDvhTXlums.png",
+    "coverColor": "#f1bb50"
+  },
+  "dress-up-darling": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx132405-qP7FQYGmNI3d.jpg",
+    "coverColor": "#e46b5d"
+  },
+  "paprika": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/b1943-jMCEYL1Ixmgc.png",
+    "coverColor": "#e49328"
+  },
+  "haibane-renmei": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx387-dS4aJivu0zPB.png",
+    "coverColor": "#e4bb86"
+  },
+  "nodame-cantabile": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/nx1698-VhVaiOLkcGCp.jpg",
+    "coverColor": "#ffe4bb"
+  },
+  "moribito": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx1827-snIp62SY7ZFK.jpg",
+    "coverColor": "#00866b"
+  },
+  "lain": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx339-xF2wp1NQuQ4r.png",
+    "coverColor": "#e4a1d6"
+  },
+  "konosuba": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx21202-mPOr80AEjUcZ.png",
+    "coverColor": "#5daee4"
+  },
+  "dorohedoro": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx105228-I4xr84QS9Pvk.jpg",
+    "coverColor": "#6b431a"
+  },
+  "silver-spoon": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx16918-0biAxYFR29mw.png",
+    "coverColor": "#50aee4"
+  },
+  "asobi-asobase": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx101001-UERCW0UGi0P7.jpg",
+    "coverColor": "#bbe450"
+  },
+  "ace-of-diamond": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx18689-LRIiRcgTJS1f.jpg",
+    "coverColor": "#5da1f1"
+  },
+  "hyouka": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx12189-zj5AWUYO53Fv.jpg",
+    "coverColor": "#f1e4bb"
+  },
+  "girl-who-leapt": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx2236-tH5fWFkHyVGg.png",
+    "coverColor": "#93bbe4"
+  },
+  "kimi-ni-todoke": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx6045-JujXjoWtslUM.jpg",
+    "coverColor": "#e45d6b"
+  },
+  "durarara": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx6746-3LTwM95Uqeoa.png",
+    "coverColor": "#e4d6ae"
+  },
+  "tsuki-ga-kirei": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx98202-H6RtsIMZPALF.png",
+    "coverColor": "#1a506b"
+  },
+  "yuri-on-ice": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx21709-aqPBDxJPruYR.png",
+    "coverColor": "#1a86e4"
+  },
+  "dennou-coil": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx2164-4tUI4MJCZQO3.png",
+    "coverColor": "#a15d35"
+  },
+  "golden-kamuy": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx99699-mBCjpoWpAVGX.jpg",
+    "coverColor": "#78281a"
+  },
+  "gundam-08ms": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx81-qBgqd932d9lW.jpg",
+    "coverColor": "#aed65d"
+  },
+  "toradora": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx4224-PXVMBLNwy2aF.jpg",
+    "coverColor": "#e45d78"
+  },
+  "k-on": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx5680-r3AI3Cwfv0Aq.png",
+    "coverColor": "#e47843"
+  },
+  "twelve-kingdoms": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx153-pLhZPQCYk7hl.png",
+    "coverColor": "#e44350"
+  },
+  "summer-wars": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx5681-3DmxUVn3grD0.jpg",
+    "coverColor": "#1a86d6"
+  },
+  "kono-oto-tomare": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx103302-RVGwGRDGdMQq.jpg",
+    "coverColor": "#c9f1d6"
+  },
+  "non-non-biyori": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx17549-ROdV36u4nWkU.png",
+    "coverColor": "#50e4bb"
+  },
+  "wotakoi": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/nx99578-oO5KChtfhzln.png",
+    "coverColor": "#d6936b"
+  },
+  "clannad": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx2167-pSDBcyc0vjej.jpg",
+    "coverColor": "#bbbbff"
+  },
+  "snow-white-red-hair": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx21058-GRqasG1xk3bD.jpg",
+    "coverColor": "#5dbbf1"
+  },
+  "beastars": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx107660-hgknnyaLchJW.png",
+    "coverColor": "#e4a15d"
+  },
+  "devilman-crybaby": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx98460-bLtH2c3jd6sV.png",
+    "coverColor": "#f1e4c9"
+  },
+  "honey-and-clover": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx16-S9k8qahNXoYP.jpg",
+    "coverColor": "#aee486"
+  },
+  "heike-story": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx138714-dLyXT5qyTYbr.jpg",
+    "coverColor": "#f1ae1a"
+  },
+  "my-hero": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx21459-nYh85uj2Fuwr.jpg",
+    "coverColor": "#f1d643"
+  },
+  "id-invaded": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx110350-uchN78wglmhN.png",
+    "coverColor": "#ad9685"
+  },
+  "paranoia-agent": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx323-ZGkUcJOn4ngy.png",
+    "coverColor": "#f1bb28"
+  },
+  "fune-wo-amu": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx21703-rXiXsRgiIO12.jpg",
+    "coverColor": "#ad9685"
+  },
+  "flying-witch": {
+    "coverUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx21284-vQcCLIWt1o5O.png",
+    "coverColor": "#e4c993"
+  }
+}

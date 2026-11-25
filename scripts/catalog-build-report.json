@@ -1,0 +1,34 @@
+{
+  "meta": {
+    "generatedAt": "2026-11-14T02:28:15.707Z",
+    "sourceSnapshotDate": "2026-11-14",
+    "sources": [
+      {
+        "name": "AniList",
+        "url": "https://anilist.co",
+        "fields": "社区均分、热度、收藏、类型标签、制作公司"
+      },
+      {
+        "name": "MyAnimeList",
+        "url": "https://myanimelist.net",
+        "fields": "加权社区评分、评分人数、成员数、收藏、排名"
+      }
+    ],
+    "qualityGate": "两平台加权口碑 ≥ 7.5/10，MAL 评分样本 ≥ 1.2 万，AniList 均分 ≥ 70",
+    "totalSelected": 150,
+    "eligible": 148,
+    "note": "候选番由人工初选；评分与标签用于质量门槛和解释，不代表官方排名。未使用单条论坛发言作为推荐特征。"
+  },
+  "failures": [
+    {
+      "key": "fune-wo-amu",
+      "zh": "编舟记",
+      "eligible": false
+    },
+    {
+      "key": "flying-witch",
+      "zh": "飞翔的魔女",
+      "eligible": false
+    }
+  ]
+}
